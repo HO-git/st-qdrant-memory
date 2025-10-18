@@ -147,32 +147,25 @@ function getContext() {
     };
 }
 
-// Hook into chat to add memories
-let lastProcessedLength = 0;
-let isInitialized = false;  // ADD THIS
+let isProcessing = false;  // Add this outside the function
 
 async function onMessageSent() {
     if (!settings.enabled) return;
+    if (isProcessing) return;  // Prevent reentrancy
     
-    const context = getContext();
-    const chat = context.chat || [];
-    
-    // Initialize on first load without processing
-    if (!isInitialized) {
-        lastProcessedLength = chat.length;
-        isInitialized = true;
-        return;  // Don't process on initial load
-    }
-    
-    // Only process if chat actually grew (new message added)
-    if (chat.length <= lastProcessedLength) return;
-    lastProcessedLength = chat.length;
-    
-    // Skip if last message is from us
-    const lastMsg = chat[chat.length - 1];
-    if (lastMsg?.extra?.isQdrantMemory) return;
-
+    isProcessing = true;
     try {
+        const context = getContext();
+        const chat = context.chat || [];
+        
+        // Only process if chat actually grew (new message added)
+        if (chat.length <= lastProcessedLength) return;
+        lastProcessedLength = chat.length;
+        
+        // Skip if last message is from us
+        const lastMsg = chat[chat.length - 1];
+        if (lastMsg?.extra?.isQdrantMemory) return;
+
         const characterName = context.name2;
 
         if (!chat || chat.length === 0 || !characterName) {
@@ -217,6 +210,8 @@ async function onMessageSent() {
         }
     } catch (error) {
         console.error('[Qdrant Memory] Error in onMessageSent:', error);
+    } finally {
+        isProcessing = false;  // Always reset the flag
     }
 }
 
