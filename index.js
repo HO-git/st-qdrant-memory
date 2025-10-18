@@ -13,7 +13,7 @@ const defaultSettings = {
     embeddingModel: 'text-embedding-3-large',
     memoryLimit: 5,
     scoreThreshold: 0.3,
-    memoryPosition: 2, // Position in chat context (depth)
+    memoryPosition: 2,
     debugMode: false
 };
 
@@ -140,7 +140,6 @@ function getContext() {
     if (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) {
         return SillyTavern.getContext();
     }
-    // Fallback for older versions
     return {
         chat: window.chat || [],
         name2: window.name2 || '',
@@ -164,7 +163,6 @@ async function onMessageSent() {
             return;
         }
 
-        // Get the last user message
         const lastUserMsg = chat.slice().reverse().find(msg => msg.is_user);
         if (!lastUserMsg || !lastUserMsg.mes) return;
 
@@ -175,7 +173,6 @@ async function onMessageSent() {
             console.log('[Qdrant Memory] Character:', characterName);
         }
 
-        // Search for memories
         const memories = await searchMemories(query, characterName);
 
         if (memories.length > 0) {
@@ -185,8 +182,6 @@ async function onMessageSent() {
                 console.log('[Qdrant Memory] Retrieved memories:', memoryText);
             }
 
-            // Add memories as an author's note or system message
-            // This approach works across different ST versions
             const memoryEntry = {
                 name: 'System',
                 is_user: false,
@@ -195,7 +190,6 @@ async function onMessageSent() {
                 send_date: new Date().toISOString()
             };
 
-            // Insert at specified depth from end
             const insertIndex = Math.max(0, chat.length - settings.memoryPosition);
             chat.splice(insertIndex, 0, memoryEntry);
 
@@ -275,7 +269,6 @@ function createSettingsUI() {
 
     $('#extensions_settings2').append(settingsHtml);
 
-    // Bind events
     $('#qdrant_enabled').on('change', function() {
         settings.enabled = $(this).is(':checked');
     });
@@ -335,19 +328,15 @@ function createSettingsUI() {
     });
 }
 
-// Initialize extension
 jQuery(async () => {
     loadSettings();
     createSettingsUI();
 
-    // Hook into message events
-    // Try different event hooks for compatibility
     if (typeof eventSource !== 'undefined') {
         eventSource.on('MESSAGE_SENT', onMessageSent);
         eventSource.on('CHAT_CHANGED', onMessageSent);
     }
     
-    // Fallback: poll for new messages
     let lastChatLength = 0;
     setInterval(() => {
         if (!settings.enabled) return;
@@ -360,7 +349,4 @@ jQuery(async () => {
     }, 2000);
 
     console.log('[Qdrant Memory] Extension loaded successfully');
-});
-
-    console.log('[Qdrant Memory] Extension loaded');
 });
