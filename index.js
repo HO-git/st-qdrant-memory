@@ -121,18 +121,46 @@ async function searchMemories(query, characterName) {
     }
 }
 
-// Format memories for display
+const MAX_MEMORY_LENGTH = 1500; // adjust per your preference
+
 function formatMemories(memories) {
     if (!memories || memories.length === 0) return '';
 
-    let formatted = '\n[Retrieved from past conversations]\n';
-    
-    memories.forEach((memory, index) => {
+    let formatted = '\n[Memories]\n\n';
+
+    let lastSpeaker = null;
+    let buffer = '';
+
+    memories.forEach((memory) => {
         const payload = memory.payload;
+        const speakerLabel = payload.speaker === 'user' ? 'You said' : 'Character said';
+        let text = payload.text.replace(/\n/g, ' '); // flatten newlines
+
+        // truncate if longer than MAX_MEMORY_LENGTH
+        if (text.length > MAX_MEMORY_LENGTH) {
+            text = text.substring(0, MAX_MEMORY_LENGTH) + '... (truncated)';
+        }
+
         const score = (memory.score * 100).toFixed(0);
-        formatted += `• ${payload.speaker === 'user' ? 'You said' : 'Character said'}: "${payload.text.substring(0, 150)}${payload.text.length > 150 ? '...' : ''}"\n`;
+
+        if (speakerLabel !== lastSpeaker) {
+            // flush buffer if speaker changed
+            if (buffer) {
+                formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
+            }
+            lastSpeaker = speakerLabel;
+            buffer = `  "${text}" (score: ${score}%)`;
+        } else {
+            // same speaker, append
+            buffer += `\n  "${text}" (score: ${score}%)`;
+        }
     });
-    
+
+    // flush last buffer
+    if (buffer) {
+        formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
+    }
+
     return formatted;
 }
 
