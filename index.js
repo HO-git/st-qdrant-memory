@@ -336,11 +336,12 @@ jQuery(async () => {
     loadSettings();
     createSettingsUI();
 
-    if (typeof eventSource !== 'undefined') {
-        eventSource.on('MESSAGE_SENT', onMessageSent);
-        eventSource.on('CHAT_CHANGED', onMessageSent);
-    }
     
+if (typeof eventSource !== 'undefined') {
+    eventSource.on('MESSAGE_SENT', onMessageSent);
+    eventSource.on('CHAT_CHANGED', onMessageSent);
+} else {
+    // fallback only if eventSource doesn't exist
     let lastChatLength = 0;
     setInterval(() => {
         if (!settings.enabled) return;
@@ -351,6 +352,8 @@ jQuery(async () => {
             onMessageSent();
         }
     }, 2000);
+}
+
 
     console.log('[Qdrant Memory] Extension loaded successfully');
 });
