@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 2.0.0 - Fixed looping issue by using generation interceptor
+// Version 3.0.0 - Added per-character collections and automatic memory creation
 
 const extensionName = 'qdrant-memory';
 
@@ -14,10 +14,19 @@ const defaultSettings = {
     memoryLimit: 5,
     scoreThreshold: 0.3,
     memoryPosition: 2,
-    debugMode: false
+    debugMode: false,
+    // New v3.0 settings
+    usePerCharacterCollections: true,
+    autoSaveMemories: true,
+    saveUserMessages: true,
+    saveCharacterMessages: true,
+    minMessageLength: 10,
+    showMemoryNotifications: true
 };
 
 let settings = { ...defaultSettings };
+let saveQueue = [];
+let processingSaveQueue = false;
 
 // Load settings from localStorage
 function loadSettings() {
@@ -36,6 +45,91 @@ function loadSettings() {
 function saveSettings() {
     localStorage.setItem(extensionName, JSON.stringify(settings));
     console.log('[Qdrant Memory] Settings saved');
+}
+
+// Get collection name for a character
+function getCollectionName(characterName) {
+    if (!settings.usePerCharacterCollections) {
+        return settings.collectionName;
+    }
+    
+    // Sanitize character name for collection name (lowercase, replace spaces/special chars)
+    const sanitized = characterName
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
+    
+    return `${settings.collectionName}_${sanitized}`;
+}
+
+// Get embedding dimensions for the selected model
+function getEmbeddingDimensions() {
+    const dimensions = {
+        'text-embedding-3-large': 3072,
+        'text-embedding-3-small': 1536,
+        'text-embedding-ada-002': 1536
+    };
+    return dimensions[settings.embeddingModel] || 1536;
+}
+
+// Check if collection exists
+async function collectionExists(collectionName) {
+    try {
+        const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`);
+        return response.ok;
+    } catch (error) {
+        console.error('[Qdrant Memory] Error checking collection:', error);
+        return false;
+    }
+}
+
+// Create collection for a character
+async function createCollection(collectionName) {
+    try {
+        const dimensions = getEmbeddingDimensions();
+        
+        const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                vectors: {
+                    size: dimensions,
+                    distance: 'Cosine'
+                }
+            })
+        });
+
+        if (response.ok) {
+            if (settings.debugMode) {
+                console.log(`[Qdrant Memory] Created collection: ${collectionName}`);
+            }
+            return true;
+        } else {
+            console.error(`[Qdrant Memory] Failed to create collection: ${collectionName}`);
+            return false;
+        }
+    } catch (error) {
+        console.error('[Qdrant Memory] Error creating collection:', error);
+        return false;
+    }
+}
+
+// Ensure collection exists (create if needed)
+async function ensureCollection(characterName) {
+    const collectionName = getCollectionName(characterName);
+    const exists = await collectionExists(collectionName);
+    
+    if (!exists) {
+        if (settings.debugMode) {
+            console.log(`[Qdrant Memory] Collection doesn't exist, creating: ${collectionName}`);
+        }
+        return await createCollection(collectionName);
+    }
+    
+    return true;
 }
 
 // Generate embedding using OpenAI API
@@ -77,6 +171,17 @@ async function searchMemories(query, characterName) {
     if (!settings.enabled) return [];
 
     try {
+        const collectionName = getCollectionName(characterName);
+        
+        // Check if collection exists
+        const exists = await collectionExists(collectionName);
+        if (!exists) {
+            if (settings.debugMode) {
+                console.log(`[Qdrant Memory] Collection doesn't exist yet: ${collectionName}`);
+            }
+            return [];
+        }
+
         const embedding = await generateEmbedding(query);
         if (!embedding) return [];
 
@@ -84,18 +189,22 @@ async function searchMemories(query, characterName) {
             vector: embedding,
             limit: settings.memoryLimit,
             score_threshold: settings.scoreThreshold,
-            filter: {
+            with_payload: true
+        };
+
+        // Only add character filter if using shared collection
+        if (!settings.usePerCharacterCollections) {
+            searchPayload.filter = {
                 must: [
                     {
                         key: 'character',
                         match: { value: characterName }
                     }
                 ]
-            },
-            with_payload: true
-        };
+            };
+        }
 
-        const response = await fetch(`${settings.qdrantUrl}/collections/${settings.collectionName}/points/search`, {
+        const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points/search`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -121,46 +230,122 @@ async function searchMemories(query, characterName) {
     }
 }
 
-const MAX_MEMORY_LENGTH = 1500; // adjust per your preference
+// Process save queue
+async function processSaveQueue() {
+    if (processingSaveQueue || saveQueue.length === 0) return;
+    
+    processingSaveQueue = true;
+    
+    while (saveQueue.length > 0) {
+        const item = saveQueue.shift();
+        await saveMessageToQdrant(item.text, item.characterName, item.isUser, item.messageId);
+    }
+    
+    processingSaveQueue = false;
+}
 
+// Queue a message for saving
+function queueMessage(text, characterName, isUser, messageId) {
+    if (!settings.autoSaveMemories) return;
+    if (!settings.openaiApiKey) return;
+    if (text.length < settings.minMessageLength) return;
+    
+    // Check if we should save this type of message
+    if (isUser && !settings.saveUserMessages) return;
+    if (!isUser && !settings.saveCharacterMessages) return;
+    
+    // Avoid duplicates - check if already in queue
+    const isDuplicate = saveQueue.some(item => 
+        item.messageId === messageId && item.characterName === characterName
+    );
+    
+    if (isDuplicate) return;
+    
+    saveQueue.push({ text, characterName, isUser, messageId });
+    
+    // Start processing queue
+    processSaveQueue();
+}
+
+// Actually save a message to Qdrant
+async function saveMessageToQdrant(text, characterName, isUser, messageId) {
+    try {
+        const collectionName = getCollectionName(characterName);
+        
+        // Ensure collection exists - abort if creation fails
+        const collectionReady = await ensureCollection(characterName);
+        if (!collectionReady) {
+            console.error(`[Qdrant Memory] Cannot save message - collection creation failed for ${characterName}`);
+            return false;
+        }
+        
+        // Generate embedding
+        const embedding = await generateEmbedding(text);
+        if (!embedding) {
+            console.error('[Qdrant Memory] Cannot save message - embedding generation failed');
+            return false;
+        }
+
+        // Create point ID from message ID and timestamp
+        const pointId = messageId || Date.now();
+        
+        // Prepare payload
+        const payload = {
+            text: text,
+            speaker: isUser ? 'user' : 'character',
+            character: characterName,
+            timestamp: Date.now(),
+            messageId: messageId
+        };
+
+        // Save to Qdrant
+        const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                points: [
+                    {
+                        id: pointId,
+                        vector: embedding,
+                        payload: payload
+                    }
+                ]
+            })
+        });
+
+        if (response.ok) {
+            if (settings.debugMode) {
+                console.log(`[Qdrant Memory] Saved message to ${collectionName}:`, text.substring(0, 50));
+            }
+            if (settings.showMemoryNotifications) {
+                toastr.success('Memory saved', 'Qdrant Memory', { timeOut: 1000 });
+            }
+            return true;
+        } else {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.error(`[Qdrant Memory] Failed to save message to Qdrant: ${response.statusText} - ${errorText}`);
+            return false;
+        }
+    } catch (error) {
+        console.error('[Qdrant Memory] Error saving message:', error);
+        return false;
+    }
+}
+
+// Format memories for display
 function formatMemories(memories) {
     if (!memories || memories.length === 0) return '';
 
-    let formatted = '\n[Memories]\n\n';
-
-    let lastSpeaker = null;
-    let buffer = '';
-
-    memories.forEach((memory) => {
+    let formatted = '\n[Retrieved from past conversations]\n';
+    
+    memories.forEach((memory, index) => {
         const payload = memory.payload;
-        const speakerLabel = payload.speaker === 'user' ? 'You said' : 'Character said';
-        let text = payload.text.replace(/\n/g, ' '); // flatten newlines
-
-        // truncate if longer than MAX_MEMORY_LENGTH
-        if (text.length > MAX_MEMORY_LENGTH) {
-            text = text.substring(0, MAX_MEMORY_LENGTH) + '... (truncated)';
-        }
-
         const score = (memory.score * 100).toFixed(0);
-
-        if (speakerLabel !== lastSpeaker) {
-            // flush buffer if speaker changed
-            if (buffer) {
-                formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
-            }
-            lastSpeaker = speakerLabel;
-            buffer = `  "${text}" (score: ${score}%)`;
-        } else {
-            // same speaker, append
-            buffer += `\n  "${text}" (score: ${score}%)`;
-        }
+        formatted += `• ${payload.speaker === 'user' ? 'You said' : 'Character said'}: "${payload.text.substring(0, 150)}${payload.text.length > 150 ? '...' : ''}"\n`;
     });
-
-    // flush last buffer
-    if (buffer) {
-        formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
-    }
-
+    
     return formatted;
 }
 
@@ -179,10 +364,6 @@ function getContext() {
 // ============================================================================
 // GENERATION INTERCEPTOR - This runs BEFORE messages are sent to the LLM
 // ============================================================================
-// This is the key fix: instead of modifying chat after messages are sent,
-// we inject memories into the chat array only during generation.
-// This prevents the looping issue because we're not triggering new events.
-// ============================================================================
 
 globalThis.qdrantMemoryInterceptor = async function(chat, contextSize, abort, type) {
     if (!settings.enabled) {
@@ -196,7 +377,7 @@ globalThis.qdrantMemoryInterceptor = async function(chat, contextSize, abort, ty
         const context = getContext();
         const characterName = context.name2;
 
-        // Skip if no character is selected (e.g., in group chats or no character loaded)
+        // Skip if no character is selected
         if (!characterName) {
             if (settings.debugMode) {
                 console.log('[Qdrant Memory] No character selected, skipping');
@@ -243,8 +424,6 @@ globalThis.qdrantMemoryInterceptor = async function(chat, contextSize, abort, ty
             };
 
             // Insert memories at the specified position from the end
-            // This modifies the chat array that will be sent to the LLM
-            // but does NOT modify the persistent chat history
             const insertIndex = Math.max(0, chat.length - settings.memoryPosition);
             chat.splice(insertIndex, 0, memoryEntry);
 
@@ -252,8 +431,9 @@ globalThis.qdrantMemoryInterceptor = async function(chat, contextSize, abort, ty
                 console.log(`[Qdrant Memory] Injected ${memories.length} memories at position ${insertIndex}`);
             }
 
-            // Show notification to user
-            toastr.info(`Retrieved ${memories.length} relevant memories`, 'Qdrant Memory');
+            if (settings.showMemoryNotifications) {
+                toastr.info(`Retrieved ${memories.length} relevant memories`, 'Qdrant Memory', { timeOut: 2000 });
+            }
         } else {
             if (settings.debugMode) {
                 console.log('[Qdrant Memory] No relevant memories found');
@@ -261,17 +441,129 @@ globalThis.qdrantMemoryInterceptor = async function(chat, contextSize, abort, ty
         }
     } catch (error) {
         console.error('[Qdrant Memory] Error in generation interceptor:', error);
-        // Don't abort generation on error, just log it
     }
 };
+
+// ============================================================================
+// AUTOMATIC MEMORY CREATION
+// ============================================================================
+
+function onMessageSent() {
+    if (!settings.autoSaveMemories) return;
+    
+    try {
+        const context = getContext();
+        const chat = context.chat || [];
+        const characterName = context.name2;
+
+        if (!characterName || chat.length === 0) return;
+
+        // Get the last message
+        const lastMessage = chat[chat.length - 1];
+        
+        // Create a unique ID for this message
+        const messageId = `${characterName}_${lastMessage.send_date}_${chat.length}`;
+
+        // Queue the message for saving (queue handles deduplication)
+        if (lastMessage.mes && lastMessage.mes.trim().length > 0) {
+            const isUser = lastMessage.is_user || false;
+            queueMessage(lastMessage.mes, characterName, isUser, messageId);
+        }
+    } catch (error) {
+        console.error('[Qdrant Memory] Error in onMessageSent:', error);
+    }
+}
+
+// ============================================================================
+// MEMORY VIEWER FUNCTIONS
+// ============================================================================
+
+async function getCollectionInfo(collectionName) {
+    try {
+        const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`);
+        if (response.ok) {
+            const data = await response.json();
+            return data.result;
+        }
+        return null;
+    } catch (error) {
+        console.error('[Qdrant Memory] Error getting collection info:', error);
+        return null;
+    }
+}
+
+async function deleteCollection(collectionName) {
+    try {
+        const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
+            method: 'DELETE'
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('[Qdrant Memory] Error deleting collection:', error);
+        return false;
+    }
+}
+
+async function showMemoryViewer() {
+    const context = getContext();
+    const characterName = context.name2;
+    
+    if (!characterName) {
+        toastr.warning('No character selected', 'Qdrant Memory');
+        return;
+    }
+    
+    const collectionName = getCollectionName(characterName);
+    const info = await getCollectionInfo(collectionName);
+    
+    if (!info) {
+        toastr.warning(`No memories found for ${characterName}`, 'Qdrant Memory');
+        return;
+    }
+    
+    const count = info.points_count || 0;
+    const vectors = info.vectors_count || 0;
+    
+    const html = `
+        <div class="qdrant-memory-viewer">
+            <h3>Memory Viewer - ${characterName}</h3>
+            <p><strong>Collection:</strong> ${collectionName}</p>
+            <p><strong>Total Memories:</strong> ${count}</p>
+            <p><strong>Total Vectors:</strong> ${vectors}</p>
+            <div style="margin-top: 20px;">
+                <button id="qdrant_delete_collection" class="menu_button" style="background-color: #dc3545;">
+                    Delete All Memories for ${characterName}
+                </button>
+            </div>
+        </div>
+    `;
+    
+    callPopup(html, 'text');
+    
+    // Add event listener for delete button
+    setTimeout(() => {
+        $('#qdrant_delete_collection').on('click', async function() {
+            const confirmed = confirm(`Are you sure you want to delete ALL memories for ${characterName}? This cannot be undone!`);
+            if (confirmed) {
+                const success = await deleteCollection(collectionName);
+                if (success) {
+                    toastr.success(`All memories deleted for ${characterName}`, 'Qdrant Memory');
+                    $('#shadow_popup').remove();
+                } else {
+                    toastr.error('Failed to delete memories', 'Qdrant Memory');
+                }
+            }
+        });
+    }, 100);
+}
 
 // Create settings UI
 function createSettingsUI() {
     const settingsHtml = `
         <div class="qdrant-memory-settings">
-            <h3>Qdrant Memory Extension</h3>
+            <h3>Qdrant Memory Extension v3.0</h3>
             <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
-                Retrieves relevant memories from Qdrant and injects them before generation.
+                Automatic memory creation with per-character collections
             </p>
             
             <div style="margin: 15px 0;">
@@ -280,6 +572,10 @@ function createSettingsUI() {
                     <strong>Enable Qdrant Memory</strong>
                 </label>
             </div>
+            
+            <hr style="margin: 15px 0;" />
+            
+            <h4>Connection Settings</h4>
             
             <div style="margin: 10px 0;">
                 <label><strong>Qdrant URL:</strong></label>
@@ -290,11 +586,11 @@ function createSettingsUI() {
             </div>
             
             <div style="margin: 10px 0;">
-                <label><strong>Collection Name:</strong></label>
+                <label><strong>Base Collection Name:</strong></label>
                 <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}" 
                        style="width: 100%; margin-top: 5px;" 
                        placeholder="sillytavern_memories" />
-                <small style="color: #666;">Name of the Qdrant collection storing memories</small>
+                <small style="color: #666;">Base name for collections (character name will be appended)</small>
             </div>
             
             <div style="margin: 10px 0;">
@@ -312,6 +608,10 @@ function createSettingsUI() {
                     <option value="text-embedding-ada-002" ${settings.embeddingModel === 'text-embedding-ada-002' ? 'selected' : ''}>text-embedding-ada-002 (legacy)</option>
                 </select>
             </div>
+            
+            <hr style="margin: 15px 0;" />
+            
+            <h4>Memory Retrieval Settings</h4>
             
             <div style="margin: 10px 0;">
                 <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
@@ -334,6 +634,58 @@ function createSettingsUI() {
                 <small style="color: #666;">How many messages from the end to insert memories</small>
             </div>
             
+            <hr style="margin: 15px 0;" />
+            
+            <h4>Automatic Memory Creation</h4>
+            
+            <div style="margin: 10px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_per_character" ${settings.usePerCharacterCollections ? 'checked' : ''} />
+                    <strong>Use Per-Character Collections</strong>
+                </label>
+                <small style="color: #666; display: block; margin-left: 30px;">Each character gets their own dedicated collection (recommended)</small>
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_auto_save" ${settings.autoSaveMemories ? 'checked' : ''} />
+                    <strong>Automatically Save Memories</strong>
+                </label>
+                <small style="color: #666; display: block; margin-left: 30px;">Save messages to Qdrant as conversations happen</small>
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_save_user" ${settings.saveUserMessages ? 'checked' : ''} />
+                    Save user messages
+                </label>
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_save_character" ${settings.saveCharacterMessages ? 'checked' : ''} />
+                    Save character messages
+                </label>
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>Minimum Message Length:</strong> <span id="min_message_length_display">${settings.minMessageLength}</span></label>
+                <input type="range" id="qdrant_min_length" min="5" max="50" value="${settings.minMessageLength}" 
+                       style="width: 100%; margin-top: 5px;" />
+                <small style="color: #666;">Minimum characters to save a message</small>
+            </div>
+            
+            <hr style="margin: 15px 0;" />
+            
+            <h4>Other Settings</h4>
+            
+            <div style="margin: 10px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_notifications" ${settings.showMemoryNotifications ? 'checked' : ''} />
+                    Show memory notifications
+                </label>
+            </div>
+            
             <div style="margin: 10px 0;">
                 <label style="display: flex; align-items: center; gap: 10px;">
                     <input type="checkbox" id="qdrant_debug" ${settings.debugMode ? 'checked' : ''} />
@@ -341,9 +693,12 @@ function createSettingsUI() {
                 </label>
             </div>
             
-            <div style="margin: 15px 0; display: flex; gap: 10px;">
+            <hr style="margin: 15px 0;" />
+            
+            <div style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap;">
                 <button id="qdrant_test" class="menu_button">Test Connection</button>
                 <button id="qdrant_save" class="menu_button">Save Settings</button>
+                <button id="qdrant_view_memories" class="menu_button">View Memories</button>
             </div>
             
             <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
@@ -388,6 +743,31 @@ function createSettingsUI() {
         $('#memory_position_display').text(settings.memoryPosition);
     });
 
+    $('#qdrant_per_character').on('change', function() {
+        settings.usePerCharacterCollections = $(this).is(':checked');
+    });
+
+    $('#qdrant_auto_save').on('change', function() {
+        settings.autoSaveMemories = $(this).is(':checked');
+    });
+
+    $('#qdrant_save_user').on('change', function() {
+        settings.saveUserMessages = $(this).is(':checked');
+    });
+
+    $('#qdrant_save_character').on('change', function() {
+        settings.saveCharacterMessages = $(this).is(':checked');
+    });
+
+    $('#qdrant_min_length').on('input', function() {
+        settings.minMessageLength = parseInt($(this).val());
+        $('#min_message_length_display').text(settings.minMessageLength);
+    });
+
+    $('#qdrant_notifications').on('change', function() {
+        settings.showMemoryNotifications = $(this).is(':checked');
+    });
+
     $('#qdrant_debug').on('change', function() {
         settings.debugMode = $(this).is(':checked');
     });
@@ -402,18 +782,22 @@ function createSettingsUI() {
         $('#qdrant_status').text('Testing connection...').css({'color': '#004085', 'background': '#cce5ff', 'border': '1px solid #004085'});
         
         try {
-            const response = await fetch(`${settings.qdrantUrl}/collections/${settings.collectionName}`);
+            const response = await fetch(`${settings.qdrantUrl}/collections`);
             
             if (response.ok) {
                 const data = await response.json();
-                const count = data.result?.points_count || 0;
-                $('#qdrant_status').text(`✓ Connected! Collection has ${count} memories.`).css({'color': 'green', 'background': '#d4edda', 'border': '1px solid green'});
+                const collections = data.result?.collections || [];
+                $('#qdrant_status').text(`✓ Connected! Found ${collections.length} collections.`).css({'color': 'green', 'background': '#d4edda', 'border': '1px solid green'});
             } else {
-                $('#qdrant_status').text('✗ Connection failed. Check URL and collection name.').css({'color': '#721c24', 'background': '#f8d7da', 'border': '1px solid #721c24'});
+                $('#qdrant_status').text('✗ Connection failed. Check URL.').css({'color': '#721c24', 'background': '#f8d7da', 'border': '1px solid #721c24'});
             }
         } catch (error) {
             $('#qdrant_status').text(`✗ Error: ${error.message}`).css({'color': '#721c24', 'background': '#f8d7da', 'border': '1px solid #721c24'});
         }
+    });
+
+    $('#qdrant_view_memories').on('click', function() {
+        showMemoryViewer();
     });
 }
 
@@ -421,5 +805,12 @@ function createSettingsUI() {
 jQuery(async () => {
     loadSettings();
     createSettingsUI();
-    console.log('[Qdrant Memory] Extension loaded successfully (v2.0.0 - using generation interceptor)');
+    
+    // Hook into message events for automatic saving
+    if (typeof eventSource !== 'undefined' && eventSource.on) {
+        eventSource.on('MESSAGE_RECEIVED', onMessageSent);
+        eventSource.on('USER_MESSAGE_RENDERED', onMessageSent);
+    }
+    
+    console.log('[Qdrant Memory] Extension loaded successfully (v3.0.0 - per-character collections + auto-save)');
 });
