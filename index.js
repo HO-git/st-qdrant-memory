@@ -1,10 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
 
-import { eventSource, event_types } from '../../../script.js';
-import { getContext, saveSettingsDebounced } from '../../../extensions.js';
-import { OpenAI } from 'openai';
-
 const extensionName = 'qdrant-memory';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
@@ -17,37 +13,58 @@ const defaultSettings = {
     embeddingModel: 'text-embedding-3-large',
     memoryLimit: 5,
     scoreThreshold: 0.3,
-    includeInPrompt: true,
-    memoryPosition: 'after_character', // 'after_character', 'before_user', 'system'
+    memoryPosition: 2, // Position in chat context (depth)
     debugMode: false
 };
 
 let settings = { ...defaultSettings };
-let openaiClient = null;
 
-// Initialize OpenAI client
-function initOpenAI() {
-    if (settings.openaiApiKey) {
-        openaiClient = new OpenAI({
-            apiKey: settings.openaiApiKey,
-            dangerouslyAllowBrowser: true
-        });
+// Load settings from localStorage
+function loadSettings() {
+    const saved = localStorage.getItem(extensionName);
+    if (saved) {
+        try {
+            settings = { ...defaultSettings, ...JSON.parse(saved) };
+        } catch (e) {
+            console.error('[Qdrant Memory] Failed to load settings:', e);
+        }
     }
+    console.log('[Qdrant Memory] Settings loaded:', settings);
 }
 
-// Generate embedding for a query
+// Save settings to localStorage
+function saveSettings() {
+    localStorage.setItem(extensionName, JSON.stringify(settings));
+    console.log('[Qdrant Memory] Settings saved');
+}
+
+// Generate embedding using OpenAI API
 async function generateEmbedding(text) {
-    if (!openaiClient) {
-        console.error('[Qdrant Memory] OpenAI client not initialized');
+    if (!settings.openaiApiKey) {
+        console.error('[Qdrant Memory] OpenAI API key not set');
         return null;
     }
 
     try {
-        const response = await openaiClient.embeddings.create({
-            model: settings.embeddingModel,
-            input: text
+        const response = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${settings.openaiApiKey}`
+            },
+            body: JSON.stringify({
+                model: settings.embeddingModel,
+                input: text
+            })
         });
-        return response.data[0].embedding;
+
+        if (!response.ok) {
+            console.error('[Qdrant Memory] OpenAI API error:', response.statusText);
+            return null;
+        }
+
+        const data = await response.json();
+        return data.data[0].embedding;
     } catch (error) {
         console.error('[Qdrant Memory] Error generating embedding:', error);
         return null;
@@ -103,146 +120,164 @@ async function searchMemories(query, characterName) {
     }
 }
 
-// Format memories for injection into prompt
+// Format memories for display
 function formatMemories(memories) {
     if (!memories || memories.length === 0) return '';
 
-    let formatted = '\n\n--- Relevant Past Memories ---\n';
+    let formatted = '\n[Retrieved from past conversations]\n';
     
     memories.forEach((memory, index) => {
         const payload = memory.payload;
-        const score = (memory.score * 100).toFixed(1);
-        
-        formatted += `\nMemory ${index + 1} (relevance: ${score}%):\n`;
-        formatted += `[${payload.speaker}]: ${payload.text}\n`;
+        const score = (memory.score * 100).toFixed(0);
+        formatted += `• ${payload.speaker === 'user' ? 'You said' : 'Character said'}: "${payload.text.substring(0, 150)}${payload.text.length > 150 ? '...' : ''}"\n`;
     });
-    
-    formatted += '--- End of Memories ---\n\n';
     
     return formatted;
 }
 
-// Hook into message generation
-async function onChatChanged() {
-    if (!settings.enabled || !settings.includeInPrompt) return;
-
-    const context = getContext();
-    const chat = context.chat;
-    const characterName = context.name2;
-
-    if (!chat || chat.length === 0) return;
-
-    // Get the last user message
-    const lastUserMessage = chat.slice().reverse().find(msg => msg.is_user);
-    if (!lastUserMessage) return;
-
-    const query = lastUserMessage.mes;
-
-    if (settings.debugMode) {
-        console.log('[Qdrant Memory] Searching memories for:', query);
-        console.log('[Qdrant Memory] Character:', characterName);
+// Get current context
+function getContext() {
+    if (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) {
+        return SillyTavern.getContext();
     }
+    // Fallback for older versions
+    return {
+        chat: window.chat || [],
+        name2: window.name2 || '',
+        characters: window.characters || []
+    };
+}
 
-    // Search for relevant memories
-    const memories = await searchMemories(query, characterName);
+// Hook into chat to add memories
+async function onMessageSent() {
+    if (!settings.enabled) return;
 
-    if (memories.length > 0) {
-        const memoryText = formatMemories(memories);
-        
-        if (settings.debugMode) {
-            console.log('[Qdrant Memory] Injecting memories:', memoryText);
+    try {
+        const context = getContext();
+        const chat = context.chat || [];
+        const characterName = context.name2;
+
+        if (!chat || chat.length === 0 || !characterName) {
+            if (settings.debugMode) {
+                console.log('[Qdrant Memory] No chat or character found');
+            }
+            return;
         }
 
-        // Inject memories based on position setting
-        // This will be added to the prompt through SillyTavern's context
-        context.setExtensionPrompt(extensionName, memoryText, settings.memoryPosition);
-    }
-}
+        // Get the last user message
+        const lastUserMsg = chat.slice().reverse().find(msg => msg.is_user);
+        if (!lastUserMsg || !lastUserMsg.mes) return;
 
-// Load settings
-function loadSettings() {
-    if (localStorage.getItem(extensionName) !== null) {
-        settings = JSON.parse(localStorage.getItem(extensionName));
-    }
-    
-    // Ensure all default settings exist
-    settings = { ...defaultSettings, ...settings };
-    
-    initOpenAI();
-}
+        const query = lastUserMsg.mes;
 
-// Save settings
-function saveSettings() {
-    localStorage.setItem(extensionName, JSON.stringify(settings));
-    saveSettingsDebounced();
+        if (settings.debugMode) {
+            console.log('[Qdrant Memory] Searching for:', query);
+            console.log('[Qdrant Memory] Character:', characterName);
+        }
+
+        // Search for memories
+        const memories = await searchMemories(query, characterName);
+
+        if (memories.length > 0) {
+            const memoryText = formatMemories(memories);
+            
+            if (settings.debugMode) {
+                console.log('[Qdrant Memory] Retrieved memories:', memoryText);
+            }
+
+            // Add memories as an author's note or system message
+            // This approach works across different ST versions
+            const memoryEntry = {
+                name: 'System',
+                is_user: false,
+                is_system: true,
+                mes: memoryText,
+                send_date: new Date().toISOString()
+            };
+
+            // Insert at specified depth from end
+            const insertIndex = Math.max(0, chat.length - settings.memoryPosition);
+            chat.splice(insertIndex, 0, memoryEntry);
+
+            toastr.info(`Retrieved ${memories.length} relevant memories`, 'Qdrant Memory');
+        }
+    } catch (error) {
+        console.error('[Qdrant Memory] Error in onMessageSent:', error);
+    }
 }
 
 // Create settings UI
 function createSettingsUI() {
     const settingsHtml = `
         <div class="qdrant-memory-settings">
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Qdrant Memory Settings</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content">
-                    <label for="qdrant_enabled">
-                        <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? 'checked' : ''} />
-                        Enable Qdrant Memory
-                    </label>
-                    
-                    <label for="qdrant_url">Qdrant URL:</label>
-                    <input type="text" id="qdrant_url" class="text_pole" value="${settings.qdrantUrl}" />
-                    
-                    <label for="qdrant_collection">Collection Name:</label>
-                    <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}" />
-                    
-                    <label for="qdrant_openai_key">OpenAI API Key:</label>
-                    <input type="password" id="qdrant_openai_key" class="text_pole" value="${settings.openaiApiKey}" />
-                    
-                    <label for="qdrant_embedding_model">Embedding Model:</label>
-                    <select id="qdrant_embedding_model" class="text_pole">
-                        <option value="text-embedding-3-large" ${settings.embeddingModel === 'text-embedding-3-large' ? 'selected' : ''}>text-embedding-3-large</option>
-                        <option value="text-embedding-3-small" ${settings.embeddingModel === 'text-embedding-3-small' ? 'selected' : ''}>text-embedding-3-small</option>
-                        <option value="text-embedding-ada-002" ${settings.embeddingModel === 'text-embedding-ada-002' ? 'selected' : ''}>text-embedding-ada-002</option>
-                    </select>
-                    
-                    <label for="qdrant_memory_limit">Number of Memories to Retrieve:</label>
-                    <input type="number" id="qdrant_memory_limit" class="text_pole" value="${settings.memoryLimit}" min="1" max="20" />
-                    
-                    <label for="qdrant_score_threshold">Relevance Threshold (0-1):</label>
-                    <input type="number" id="qdrant_score_threshold" class="text_pole" value="${settings.scoreThreshold}" min="0" max="1" step="0.05" />
-                    
-                    <label for="qdrant_memory_position">Memory Injection Position:</label>
-                    <select id="qdrant_memory_position" class="text_pole">
-                        <option value="after_character" ${settings.memoryPosition === 'after_character' ? 'selected' : ''}>After Character Card</option>
-                        <option value="before_user" ${settings.memoryPosition === 'before_user' ? 'selected' : ''}>Before User Message</option>
-                        <option value="system" ${settings.memoryPosition === 'system' ? 'selected' : ''}>System Prompt</option>
-                    </select>
-                    
-                    <label for="qdrant_debug">
-                        <input type="checkbox" id="qdrant_debug" ${settings.debugMode ? 'checked' : ''} />
-                        Debug Mode (console logging)
-                    </label>
-                    
-                    <div class="qdrant-memory-buttons">
-                        <button id="qdrant_test" class="menu_button">Test Connection</button>
-                        <button id="qdrant_save" class="menu_button">Save Settings</button>
-                    </div>
-                    
-                    <div id="qdrant_status" class="qdrant-status"></div>
-                </div>
+            <h3>Qdrant Memory Extension</h3>
+            <div style="margin: 15px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? 'checked' : ''} />
+                    <strong>Enable Qdrant Memory</strong>
+                </label>
             </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>Qdrant URL:</strong></label>
+                <input type="text" id="qdrant_url" class="text_pole" value="${settings.qdrantUrl}" 
+                       style="width: 100%; margin-top: 5px;" />
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>Collection Name:</strong></label>
+                <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}" 
+                       style="width: 100%; margin-top: 5px;" />
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>OpenAI API Key:</strong></label>
+                <input type="password" id="qdrant_openai_key" class="text_pole" value="${settings.openaiApiKey}" 
+                       placeholder="sk-..." style="width: 100%; margin-top: 5px;" />
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>Embedding Model:</strong></label>
+                <select id="qdrant_embedding_model" class="text_pole" style="width: 100%; margin-top: 5px;">
+                    <option value="text-embedding-3-large" ${settings.embeddingModel === 'text-embedding-3-large' ? 'selected' : ''}>text-embedding-3-large</option>
+                    <option value="text-embedding-3-small" ${settings.embeddingModel === 'text-embedding-3-small' ? 'selected' : ''}>text-embedding-3-small</option>
+                    <option value="text-embedding-ada-002" ${settings.embeddingModel === 'text-embedding-ada-002' ? 'selected' : ''}>text-embedding-ada-002</option>
+                </select>
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
+                <input type="range" id="qdrant_memory_limit" min="1" max="10" value="${settings.memoryLimit}" 
+                       style="width: 100%; margin-top: 5px;" />
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label><strong>Relevance Threshold:</strong> <span id="score_threshold_display">${settings.scoreThreshold}</span></label>
+                <input type="range" id="qdrant_score_threshold" min="0" max="1" step="0.05" value="${settings.scoreThreshold}" 
+                       style="width: 100%; margin-top: 5px;" />
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_debug" ${settings.debugMode ? 'checked' : ''} />
+                    Debug Mode (check console)
+                </label>
+            </div>
+            
+            <div style="margin: 15px 0; display: flex; gap: 10px;">
+                <button id="qdrant_test" class="menu_button">Test Connection</button>
+                <button id="qdrant_save" class="menu_button">Save Settings</button>
+            </div>
+            
+            <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
         </div>
     `;
 
     $('#extensions_settings2').append(settingsHtml);
 
-    // Bind event handlers
+    // Bind events
     $('#qdrant_enabled').on('change', function() {
         settings.enabled = $(this).is(':checked');
-        saveSettings();
     });
 
     $('#qdrant_url').on('input', function() {
@@ -263,30 +298,26 @@ function createSettingsUI() {
 
     $('#qdrant_memory_limit').on('input', function() {
         settings.memoryLimit = parseInt($(this).val());
+        $('#memory_limit_display').text(settings.memoryLimit);
     });
 
     $('#qdrant_score_threshold').on('input', function() {
         settings.scoreThreshold = parseFloat($(this).val());
-    });
-
-    $('#qdrant_memory_position').on('change', function() {
-        settings.memoryPosition = $(this).val();
+        $('#score_threshold_display').text(settings.scoreThreshold);
     });
 
     $('#qdrant_debug').on('change', function() {
         settings.debugMode = $(this).is(':checked');
-        saveSettings();
     });
 
     $('#qdrant_save').on('click', function() {
         saveSettings();
-        initOpenAI();
-        $('#qdrant_status').text('Settings saved!').css('color', 'green');
-        setTimeout(() => $('#qdrant_status').text(''), 3000);
+        $('#qdrant_status').text('✓ Settings saved!').css({'color': 'green', 'background': '#d4edda', 'border': '1px solid green'});
+        setTimeout(() => $('#qdrant_status').text('').css({'background': '', 'border': ''}), 3000);
     });
 
     $('#qdrant_test').on('click', async function() {
-        $('#qdrant_status').text('Testing connection...').css('color', 'blue');
+        $('#qdrant_status').text('Testing connection...').css({'color': '#004085', 'background': '#cce5ff', 'border': '1px solid #004085'});
         
         try {
             const response = await fetch(`${settings.qdrantUrl}/collections/${settings.collectionName}`);
@@ -294,12 +325,12 @@ function createSettingsUI() {
             if (response.ok) {
                 const data = await response.json();
                 const count = data.result?.points_count || 0;
-                $('#qdrant_status').text(`✓ Connected! Collection has ${count} memories.`).css('color', 'green');
+                $('#qdrant_status').text(`✓ Connected! Collection has ${count} memories.`).css({'color': 'green', 'background': '#d4edda', 'border': '1px solid green'});
             } else {
-                $('#qdrant_status').text('✗ Connection failed. Check URL and collection name.').css('color', 'red');
+                $('#qdrant_status').text('✗ Connection failed. Check URL and collection name.').css({'color': '#721c24', 'background': '#f8d7da', 'border': '1px solid #721c24'});
             }
         } catch (error) {
-            $('#qdrant_status').text(`✗ Error: ${error.message}`).css('color', 'red');
+            $('#qdrant_status').text(`✗ Error: ${error.message}`).css({'color': '#721c24', 'background': '#f8d7da', 'border': '1px solid #721c24'});
         }
     });
 }
@@ -309,9 +340,27 @@ jQuery(async () => {
     loadSettings();
     createSettingsUI();
 
-    // Hook into chat events
-    eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-    eventSource.on(event_types.MESSAGE_SENT, onChatChanged);
+    // Hook into message events
+    // Try different event hooks for compatibility
+    if (typeof eventSource !== 'undefined') {
+        eventSource.on('MESSAGE_SENT', onMessageSent);
+        eventSource.on('CHAT_CHANGED', onMessageSent);
+    }
+    
+    // Fallback: poll for new messages
+    let lastChatLength = 0;
+    setInterval(() => {
+        if (!settings.enabled) return;
+        const context = getContext();
+        const chat = context.chat || [];
+        if (chat.length > lastChatLength) {
+            lastChatLength = chat.length;
+            onMessageSent();
+        }
+    }, 2000);
+
+    console.log('[Qdrant Memory] Extension loaded successfully');
+});
 
     console.log('[Qdrant Memory] Extension loaded');
 });
