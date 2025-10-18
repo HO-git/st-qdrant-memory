@@ -190,7 +190,7 @@ async function onMessageSent() {
                 is_user: false,
                 is_system: true,
                 mes: memoryText,
-                send_date: new Date().toISOString()
+                send_date: new Date().toISOString(),
                 extra: { isQdrantMemory: true }
             };
 
