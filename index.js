@@ -84,30 +84,33 @@ async function collectionExists(collectionName) {
     }
 }
 
+// Create collection for a character
 async function createCollection(collectionName) {
     try {
         const dimensions = getEmbeddingDimensions();
+        
         const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
                 vectors: {
                     size: dimensions,
                     distance: 'Cosine'
-                },
-                on_disk_payload: true // <— optional but good default
+                }
             })
         });
 
-        const result = await response.json().catch(() => null);
-        if (!response.ok) {
-            console.error(`[Qdrant Memory] Failed to create collection: ${collectionName}`, result);
+        if (response.ok) {
+            if (settings.debugMode) {
+                console.log(`[Qdrant Memory] Created collection: ${collectionName}`);
+            }
+            return true;
+        } else {
+            console.error(`[Qdrant Memory] Failed to create collection: ${collectionName}`);
             return false;
         }
-
-        if (settings.debugMode)
-            console.log(`[Qdrant Memory] Created collection ${collectionName}`, result);
-        return true;
     } catch (error) {
         console.error('[Qdrant Memory] Error creating collection:', error);
         return false;
@@ -170,11 +173,11 @@ async function searchMemories(query, characterName) {
     try {
         const collectionName = getCollectionName(characterName);
         
-        // Check if collection exists
-        const exists = await collectionExists(collectionName);
-        if (!exists) {
+        // Ensure collection exists (create if needed)
+        const collectionReady = await ensureCollection(characterName);
+        if (!collectionReady) {
             if (settings.debugMode) {
-                console.log(`[Qdrant Memory] Collection doesn't exist yet: ${collectionName}`);
+                console.log(`[Qdrant Memory] Collection not ready: ${collectionName}`);
             }
             return [];
         }
@@ -331,46 +334,18 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
     }
 }
 
-const MAX_MEMORY_LENGTH = 1500; // adjust per your preference
-
+// Format memories for display
 function formatMemories(memories) {
     if (!memories || memories.length === 0) return '';
 
-    let formatted = '\n[Retrieved from past conversations]\n\n';
-
-    let lastSpeaker = null;
-    let buffer = '';
-
-    memories.forEach((memory) => {
+    let formatted = '\n[Retrieved from past conversations]\n';
+    
+    memories.forEach((memory, index) => {
         const payload = memory.payload;
-        const speakerLabel = payload.speaker === 'user' ? 'You said' : 'Character said';
-        let text = payload.text.replace(/\n/g, ' '); // flatten newlines
-
-        // truncate if longer than MAX_MEMORY_LENGTH
-        if (text.length > MAX_MEMORY_LENGTH) {
-            text = text.substring(0, MAX_MEMORY_LENGTH) + '... (truncated)';
-        }
-
         const score = (memory.score * 100).toFixed(0);
-
-        if (speakerLabel !== lastSpeaker) {
-            // flush buffer if speaker changed
-            if (buffer) {
-                formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
-            }
-            lastSpeaker = speakerLabel;
-            buffer = `  "${text}" (score: ${score}%)`;
-        } else {
-            // same speaker, append
-            buffer += `\n  "${text}" (score: ${score}%)`;
-        }
+        formatted += `• ${payload.speaker === 'user' ? 'You said' : 'Character said'}: "${payload.text.substring(0, 150)}${payload.text.length > 150 ? '...' : ''}"\n`;
     });
-
-    // flush last buffer
-    if (buffer) {
-        formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
-    }
-
+    
     return formatted;
 }
 
