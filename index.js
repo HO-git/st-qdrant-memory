@@ -84,33 +84,30 @@ async function collectionExists(collectionName) {
     }
 }
 
-// Create collection for a character
 async function createCollection(collectionName) {
     try {
         const dimensions = getEmbeddingDimensions();
-        
         const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 vectors: {
                     size: dimensions,
                     distance: 'Cosine'
-                }
+                },
+                on_disk_payload: true // <— optional but good default
             })
         });
 
-        if (response.ok) {
-            if (settings.debugMode) {
-                console.log(`[Qdrant Memory] Created collection: ${collectionName}`);
-            }
-            return true;
-        } else {
-            console.error(`[Qdrant Memory] Failed to create collection: ${collectionName}`);
+        const result = await response.json().catch(() => null);
+        if (!response.ok) {
+            console.error(`[Qdrant Memory] Failed to create collection: ${collectionName}`, result);
             return false;
         }
+
+        if (settings.debugMode)
+            console.log(`[Qdrant Memory] Created collection ${collectionName}`, result);
+        return true;
     } catch (error) {
         console.error('[Qdrant Memory] Error creating collection:', error);
         return false;
