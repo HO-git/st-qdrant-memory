@@ -147,7 +147,8 @@ function getContext() {
     };
 }
 
-let isProcessing = false;  // Add this outside the function
+let isProcessing = false;
+let lastProcessedLength = 0;  // ADD THIS LINE
 
 async function onMessageSent() {
     if (!settings.enabled) return;
