@@ -148,13 +148,21 @@ function getContext() {
 }
 
 // Hook into chat to add memories
-let lastProcessedLength = 0;  // ADD THIS LINE BEFORE THE FUNCTION
+let lastProcessedLength = 0;
+let isInitialized = false;  // ADD THIS
 
 async function onMessageSent() {
     if (!settings.enabled) return;
     
     const context = getContext();
     const chat = context.chat || [];
+    
+    // Initialize on first load without processing
+    if (!isInitialized) {
+        lastProcessedLength = chat.length;
+        isInitialized = true;
+        return;  // Don't process on initial load
+    }
     
     // Only process if chat actually grew (new message added)
     if (chat.length <= lastProcessedLength) return;
