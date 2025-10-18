@@ -355,7 +355,6 @@ jQuery(async () => {
     
 if (typeof eventSource !== 'undefined') {
     eventSource.on('MESSAGE_SENT', onMessageSent);
-    eventSource.on('CHAT_CHANGED', onMessageSent);
 } else {
     // fallback only if eventSource doesn't exist
     let lastChatLength = 0;
