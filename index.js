@@ -148,15 +148,23 @@ function getContext() {
 }
 
 // Hook into chat to add memories
+let lastProcessedLength = 0;  // ADD THIS LINE BEFORE THE FUNCTION
+
 async function onMessageSent() {
     if (!settings.enabled) return;
+    
     const context = getContext();
-    const lastMsg = context.chat?.[context.chat.length - 1];
+    const chat = context.chat || [];
+    
+    // Only process if chat actually grew (new message added)
+    if (chat.length <= lastProcessedLength) return;
+    lastProcessedLength = chat.length;
+    
+    // Skip if last message is from us
+    const lastMsg = chat[chat.length - 1];
     if (lastMsg?.extra?.isQdrantMemory) return;
 
     try {
-        const context = getContext();
-        const chat = context.chat || [];
         const characterName = context.name2;
 
         if (!chat || chat.length === 0 || !characterName) {
