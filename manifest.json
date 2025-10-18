@@ -1,0 +1,12 @@
+{
+  "display_name": "Qdrant Memory",
+  "loading_order": 10,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Custom",
+  "version": "1.0.0",
+  "homePage": "https://github.com/yourusername/qdrant-memory",
+  "auto_update": false
+}

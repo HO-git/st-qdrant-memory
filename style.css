@@ -1,0 +1,30 @@
+.qdrant-memory-settings {
+    margin: 10px 0;
+}
+
+.qdrant-memory-settings label {
+    display: block;
+    margin: 10px 0 5px 0;
+    font-weight: bold;
+}
+
+.qdrant-memory-settings input[type="text"],
+.qdrant-memory-settings input[type="password"],
+.qdrant-memory-settings input[type="number"],
+.qdrant-memory-settings select {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.qdrant-memory-buttons {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+.qdrant-status {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 5px;
+    min-height: 20px;
+}
