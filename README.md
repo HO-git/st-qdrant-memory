@@ -17,7 +17,7 @@ Automatically retrieves relevant memories from Qdrant vector database and inject
 
 In SillyTavern:
 1. Go to Extensions > Install Extension
-2. Enter: `https://github.com/YOUR_USERNAME/st-qdrant-memory`
+2. Enter: `https://github.com/HO-git/st-qdrant-memory`
 3. Configure settings in Extensions panel
 4. Enable the extension
 
