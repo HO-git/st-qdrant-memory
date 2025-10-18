@@ -150,6 +150,9 @@ function getContext() {
 // Hook into chat to add memories
 async function onMessageSent() {
     if (!settings.enabled) return;
+    const context = getContext();
+    const lastMsg = context.chat?.[context.chat.length - 1];
+    if (lastMsg?.extra?.isQdrantMemory) return;
 
     try {
         const context = getContext();
@@ -188,6 +191,7 @@ async function onMessageSent() {
                 is_system: true,
                 mes: memoryText,
                 send_date: new Date().toISOString()
+                extra: { isQdrantMemory: true }
             };
 
             const insertIndex = Math.max(0, chat.length - settings.memoryPosition);
