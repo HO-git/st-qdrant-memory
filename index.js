@@ -267,7 +267,13 @@ function queueMessage(text, characterName, isUser, messageId) {
     processSaveQueue();
 }
 
-const { v4: uuidv4 } = require('uuid');
+// Simple UUID generator for browser
+function generateUUID() { 
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
 
 // Actually save a message to Qdrant
 async function saveMessageToQdrant(text, characterName, isUser, messageId) {
@@ -289,7 +295,7 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
         }
 
         // Generate point ID using UUID if messageId is not provided
-        const pointId = messageId || uuidv4();
+        const pointId = messageId || generateUUID();
         
         // Prepare payload
         const payload = {
