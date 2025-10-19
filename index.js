@@ -835,6 +835,20 @@ function createSettingsUI() {
     });
 }
 
+async function onMessageSent() {
+    if (!settings.autoSaveMemories) return;
+    const context = getContext();
+    const characterName = context.name2;
+    const chat = context.chat || [];
+
+    if (!characterName || chat.length === 0) return;
+
+    const lastMessage = chat[chat.length - 1];
+    if (!lastMessage) return;
+
+    await queueMessage(lastMessage, characterName);
+}
+
 // Extension initialization
 jQuery(async () => {
     loadSettings();
@@ -862,3 +876,4 @@ jQuery(async () => {
     
     console.log('[Qdrant Memory] Extension loaded successfully (v3.0.0 - per-character collections + auto-save)');
 });
+
