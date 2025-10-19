@@ -373,35 +373,47 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
   }
 }
 
-// Format memories for display
+const MAX_MEMORY_LENGTH = 1500;
+
 function formatMemories(memories) {
-  if (!memories || memories.length === 0) return ""
+    if (!memories || memories.length === 0) return '';
 
-  let formatted = "\n[Retrieved from past conversations]\n"
+    let formatted = '\n[Retrieved from past conversations]\n\n';
 
-  memories.forEach((memory, index) => {
-    const payload = memory.payload
-    const score = (memory.score * 100).toFixed(0)
-    formatted += `• ${payload.speaker === "user" ? "You said" : "Character said"}: "${payload.text.substring(0, 150)}${payload.text.length > 150 ? "..." : ""}"\n`
-  })
+    let lastSpeaker = null;
+    let buffer = '';
 
-  return formatted
-}
+    memories.forEach((memory) => {
+        const payload = memory.payload;
+        const speakerLabel = payload.speaker === 'user' ? 'You said' : 'Character said';
+        let text = payload.text.replace(/\n/g, ' '); // flatten newlines
 
-// Get current context
-function getContext() {
-  const SillyTavern = window.SillyTavern // Declare SillyTavern variable
-  const $ = window.$ // Declare $ variable
-  const toastr = window.toastr // Declare toastr variable
+        // truncate if longer than MAX_MEMORY_LENGTH
+        if (text.length > MAX_MEMORY_LENGTH) {
+            text = text.substring(0, MAX_MEMORY_LENGTH) + '... (truncated)';
+        }
 
-  if (typeof SillyTavern !== "undefined" && SillyTavern.getContext) {
-    return SillyTavern.getContext()
-  }
-  return {
-    chat: window.chat || [],
-    name2: window.name2 || "",
-    characters: window.characters || [],
-  }
+        const score = (memory.score * 100).toFixed(0);
+
+        if (speakerLabel !== lastSpeaker) {
+            // flush buffer if speaker changed
+            if (buffer) {
+                formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
+            }
+            lastSpeaker = speakerLabel;
+            buffer = `  "${text}" (score: ${score}%)`;
+        } else {
+            // same speaker, append
+            buffer += `\n  "${text}" (score: ${score}%)`;
+        }
+    });
+
+    // flush last buffer
+    if (buffer) {
+        formatted += `• ${lastSpeaker}:\n${buffer}\n\n`;
+    }
+
+    return formatted;
 }
 
 // ============================================================================
