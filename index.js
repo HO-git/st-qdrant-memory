@@ -22,6 +22,7 @@ const defaultSettings = {
   saveCharacterMessages: true,
   minMessageLength: 10,
   showMemoryNotifications: true,
+  retainRecentMessages: 5,
 }
 
 let settings = { ...defaultSettings }
@@ -185,6 +186,23 @@ async function searchMemories(query, characterName) {
     const embedding = await generateEmbedding(query)
     if (!embedding) return []
 
+    // Get the timestamp from N messages ago to exclude recent context
+    const context = getContext()
+    const chat = context.chat || []
+    let timestampThreshold = 0
+
+    if (settings.retainRecentMessages > 0 && chat.length > settings.retainRecentMessages) {
+      // Get the timestamp of the message at the retain boundary
+      const retainIndex = chat.length - settings.retainRecentMessages
+      const retainMessage = chat[retainIndex]
+      if (retainMessage && retainMessage.send_date) {
+        timestampThreshold = retainMessage.send_date
+        if (settings.debugMode) {
+          console.log(`[Qdrant Memory] Excluding messages newer than timestamp: ${timestampThreshold}`)
+        }
+      }
+    }
+
     const searchPayload = {
       vector: embedding,
       limit: settings.memoryLimit,
@@ -192,15 +210,30 @@ async function searchMemories(query, characterName) {
       with_payload: true,
     }
 
-    // Only add character filter if using shared collection
+    const filterConditions = []
+
+    // Add timestamp filter to exclude recent messages
+    if (timestampThreshold > 0) {
+      filterConditions.push({
+        key: "timestamp",
+        range: {
+          lt: timestampThreshold,
+        },
+      })
+    }
+
+    // Add character filter if using shared collection
     if (!settings.usePerCharacterCollections) {
+      filterConditions.push({
+        key: "character",
+        match: { value: characterName },
+      })
+    }
+
+    // Only add filter if we have conditions
+    if (filterConditions.length > 0) {
       searchPayload.filter = {
-        must: [
-          {
-            key: "character",
-            match: { value: characterName },
-          },
-        ],
+        must: filterConditions,
       }
     }
 
@@ -689,6 +722,13 @@ function createSettingsUI() {
                 <small style="color: #666;">How many messages from the end to insert memories</small>
             </div>
             
+            <div style="margin: 10px 0;">
+                <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
+                <input type="range" id="qdrant_retain_recent" min="0" max="20" value="${settings.retainRecentMessages}" 
+                       style="width: 100%; margin-top: 5px;" />
+                <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
+            </div>
+            
             <hr style="margin: 15px 0;" />
             
             <h4>Automatic Memory Creation</h4>
@@ -797,6 +837,11 @@ function createSettingsUI() {
   $("#qdrant_memory_position").on("input", function () {
     settings.memoryPosition = Number.parseInt($(this).val())
     $("#memory_position_display").text(settings.memoryPosition)
+  })
+
+  $("#qdrant_retain_recent").on("input", function () {
+    settings.retainRecentMessages = Number.parseInt($(this).val())
+    $("#retain_recent_display").text(settings.retainRecentMessages)
   })
 
   $("#qdrant_per_character").on("change", function () {
