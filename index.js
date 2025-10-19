@@ -288,7 +288,7 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
             return false;
         }
 
-        // Create point ID from message ID and timestamp
+        // Generate point ID using UUID if messageId is not provided
         const pointId = messageId || uuidv4();
         
         // Prepare payload
@@ -317,21 +317,14 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
             })
         });
 
-        if (response.ok) {
-            if (settings.debugMode) {
-                console.log(`[Qdrant Memory] Saved message to ${collectionName}:`, text.substring(0, 50));
-            }
-            if (settings.showMemoryNotifications) {
-                toastr.success('Memory saved', 'Qdrant Memory', { timeOut: 1000 });
-            }
-            return true;
-        } else {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            console.error(`[Qdrant Memory] Failed to save message to Qdrant: ${response.statusText} - ${errorText}`);
+        if (!response.ok) {
+            console.error(`[Qdrant Memory] Failed to save message: ${response.status} ${response.statusText}`);
             return false;
         }
-    } catch (error) {
-        console.error('[Qdrant Memory] Error saving message:', error);
+
+        return true;
+    } catch (err) {
+        console.error('[Qdrant Memory] Error saving message:', err);
         return false;
     }
 }
