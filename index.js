@@ -524,37 +524,71 @@ async function showMemoryViewer() {
     const count = info.points_count || 0;
     const vectors = info.vectors_count || 0;
     
-    const html = `
-        <div class="qdrant-memory-viewer">
-            <h3>Memory Viewer - ${characterName}</h3>
-            <p><strong>Collection:</strong> ${collectionName}</p>
-            <p><strong>Total Memories:</strong> ${count}</p>
-            <p><strong>Total Vectors:</strong> ${vectors}</p>
-            <div style="margin-top: 20px;">
-                <button id="qdrant_delete_collection" class="menu_button" style="background-color: #dc3545;">
-                    Delete All Memories for ${characterName}
-                </button>
+    // Create a simple modal using jQuery
+    const modalHtml = `
+        <div id="qdrant_modal" style="
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 10000;
+            max-width: 500px;
+            width: 90%;
+        ">
+            <div style="color: #333;">
+                <h3 style="margin-top: 0;">Memory Viewer - ${characterName}</h3>
+                <p><strong>Collection:</strong> ${collectionName}</p>
+                <p><strong>Total Memories:</strong> ${count}</p>
+                <p><strong>Total Vectors:</strong> ${vectors}</p>
+                <div style="margin-top: 20px; display: flex; gap: 10px;">
+                    <button id="qdrant_delete_collection_btn" class="menu_button" style="background-color: #dc3545; color: white;">
+                        Delete All Memories
+                    </button>
+                    <button id="qdrant_close_modal" class="menu_button">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
+        <div id="qdrant_overlay" style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+        "></div>
     `;
     
-    callPopup(html, 'text');
+    $('body').append(modalHtml);
     
-    // Add event listener for delete button
-    setTimeout(() => {
-        $('#qdrant_delete_collection').on('click', async function() {
-            const confirmed = confirm(`Are you sure you want to delete ALL memories for ${characterName}? This cannot be undone!`);
-            if (confirmed) {
-                const success = await deleteCollection(collectionName);
-                if (success) {
-                    toastr.success(`All memories deleted for ${characterName}`, 'Qdrant Memory');
-                    $('#shadow_popup').remove();
-                } else {
-                    toastr.error('Failed to delete memories', 'Qdrant Memory');
-                }
+    // Close modal
+    $('#qdrant_close_modal, #qdrant_overlay').on('click', function() {
+        $('#qdrant_modal').remove();
+        $('#qdrant_overlay').remove();
+    });
+    
+    // Delete collection
+    $('#qdrant_delete_collection_btn').on('click', async function() {
+        const confirmed = confirm(`Are you sure you want to delete ALL memories for ${characterName}? This cannot be undone!`);
+        if (confirmed) {
+            $(this).prop('disabled', true).text('Deleting...');
+            const success = await deleteCollection(collectionName);
+            if (success) {
+                toastr.success(`All memories deleted for ${characterName}`, 'Qdrant Memory');
+                $('#qdrant_modal').remove();
+                $('#qdrant_overlay').remove();
+            } else {
+                toastr.error('Failed to delete memories', 'Qdrant Memory');
+                $(this).prop('disabled', false).text('Delete All Memories');
             }
-        });
-    }, 100);
+        }
+    });
 }
 
 // Create settings UI
