@@ -267,6 +267,8 @@ function queueMessage(text, characterName, isUser, messageId) {
     processSaveQueue();
 }
 
+const { v4: uuidv4 } = require('uuid');
+
 // Actually save a message to Qdrant
 async function saveMessageToQdrant(text, characterName, isUser, messageId) {
     try {
@@ -287,7 +289,7 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
         }
 
         // Create point ID from message ID and timestamp
-        const pointId = messageId || Date.now();
+        const pointId = messageId || uuidv4();
         
         // Prepare payload
         const payload = {
