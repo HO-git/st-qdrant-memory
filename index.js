@@ -862,10 +862,3 @@ jQuery(async () => {
     
     console.log('[Qdrant Memory] Extension loaded successfully (v3.0.0 - per-character collections + auto-save)');
 });
-```
-
-This adds the polling fallback that checks every 2 seconds for new messages and calls `onMessageSent()` when the chat grows.
-
-After this fix, you should start seeing logs like:
-```
-[Qdrant Memory] Saved message to sillytavern_memories_chat: ...
