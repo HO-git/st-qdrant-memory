@@ -844,7 +844,28 @@ jQuery(async () => {
     if (typeof eventSource !== 'undefined' && eventSource.on) {
         eventSource.on('MESSAGE_RECEIVED', onMessageSent);
         eventSource.on('USER_MESSAGE_RENDERED', onMessageSent);
+        console.log('[Qdrant Memory] Using eventSource hooks');
+    } else {
+        // Fallback: poll for new messages
+        console.log('[Qdrant Memory] Using polling fallback for auto-save');
+        let lastChatLength = 0;
+        setInterval(() => {
+            if (!settings.autoSaveMemories) return;
+            const context = getContext();
+            const chat = context.chat || [];
+            if (chat.length > lastChatLength) {
+                lastChatLength = chat.length;
+                onMessageSent();
+            }
+        }, 2000);
     }
     
     console.log('[Qdrant Memory] Extension loaded successfully (v3.0.0 - per-character collections + auto-save)');
 });
+```
+
+This adds the polling fallback that checks every 2 seconds for new messages and calls `onMessageSent()` when the chat grows.
+
+After this fix, you should start seeing logs like:
+```
+[Qdrant Memory] Saved message to sillytavern_memories_chat: ...
