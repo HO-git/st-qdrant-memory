@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.1.0 - Added group chat memories storage and semantic chunking
+// Version 3.2.0 - Added index chats button
 
 const extensionName = "qdrant-memory"
 
@@ -565,6 +565,338 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
 // Generate a unique UUID
 function generateUUID() {
   // Implementation for generating UUID
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    var r = (Math.random() * 16) | 0,
+      v = c == "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+// ============================================================================
+// CHAT INDEXING FUNCTIONS
+// ============================================================================
+
+async function getCharacterChats(characterName) {
+  try {
+    // Get chat metadata from SillyTavern
+    const context = getContext()
+    const $ = window.$ // Declare $ variable
+
+    // Use SillyTavern's API to get chat files
+    const response = await fetch("/api/characters/chats", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        avatar_url: context.characters?.find((c) => c.name === characterName)?.avatar || characterName,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("[Qdrant Memory] Failed to get chat list:", response.statusText)
+      return []
+    }
+
+    const chats = await response.json()
+    return chats || []
+  } catch (error) {
+    console.error("[Qdrant Memory] Error getting character chats:", error)
+    return []
+  }
+}
+
+async function loadChatFile(characterName, chatFile) {
+  try {
+    const context = getContext()
+    const $ = window.$ // Declare $ variable
+
+    const response = await fetch("/api/chats/get", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ch_name: characterName,
+        file_name: chatFile,
+        avatar_url: context.characters?.find((c) => c.name === characterName)?.avatar || characterName,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("[Qdrant Memory] Failed to load chat file:", response.statusText)
+      return null
+    }
+
+    const chatData = await response.json()
+    return chatData
+  } catch (error) {
+    console.error("[Qdrant Memory] Error loading chat file:", error)
+    return null
+  }
+}
+
+async function chunkExists(collectionName, messageIds) {
+  try {
+    // Search for any of the message IDs in the chunk
+    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points/scroll`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filter: {
+          should: messageIds.map((id) => ({
+            key: "messageIds",
+            match: { text: id },
+          })),
+        },
+        limit: 1,
+        with_payload: false,
+      }),
+    })
+
+    if (!response.ok) return false
+
+    const data = await response.json()
+    return data.result?.points?.length > 0
+  } catch (error) {
+    console.error("[Qdrant Memory] Error checking chunk existence:", error)
+    return false
+  }
+}
+
+function createChunksFromChat(messages, characterName) {
+  const chunks = []
+  let currentChunk = []
+  let currentSize = 0
+
+  for (const msg of messages) {
+    // Skip system messages
+    if (msg.is_system) continue
+
+    const text = msg.mes?.trim()
+    if (!text || text.length < settings.minMessageLength) continue
+
+    // Check if we should save this type of message
+    const isUser = msg.is_user || false
+    if (isUser && !settings.saveUserMessages) continue
+    if (!isUser && !settings.saveCharacterMessages) continue
+
+    // Create message object
+    const messageObj = {
+      text: text,
+      characterName: characterName,
+      isUser: isUser,
+      messageId: `${characterName}_${msg.send_date}_${messages.indexOf(msg)}`,
+      timestamp: msg.send_date || Date.now(),
+    }
+
+    const messageSize = text.length + characterName.length + 4
+
+    // If adding this message would exceed max size, save current chunk
+    if (currentSize + messageSize > settings.chunkMaxSize && currentChunk.length > 0) {
+      chunks.push(createChunkFromMessages(currentChunk))
+      currentChunk = []
+      currentSize = 0
+    }
+
+    currentChunk.push(messageObj)
+    currentSize += messageSize
+
+    // If we've reached min size and have a good number of messages, consider chunking
+    if (currentSize >= settings.chunkMinSize && currentChunk.length >= 3) {
+      chunks.push(createChunkFromMessages(currentChunk))
+      currentChunk = []
+      currentSize = 0
+    }
+  }
+
+  // Save any remaining messages
+  if (currentChunk.length > 0) {
+    chunks.push(createChunkFromMessages(currentChunk))
+  }
+
+  return chunks
+}
+
+function createChunkFromMessages(messages) {
+  let chunkText = ""
+  const speakers = new Set()
+  const messageIds = []
+  let oldestTimestamp = Number.POSITIVE_INFINITY
+
+  messages.forEach((msg) => {
+    const speaker = msg.isUser ? "You" : msg.characterName
+    speakers.add(speaker)
+    messageIds.push(msg.messageId)
+
+    const line = `${speaker}: ${msg.text}\n`
+    chunkText += line
+
+    if (msg.timestamp < oldestTimestamp) {
+      oldestTimestamp = msg.timestamp
+    }
+  })
+
+  return {
+    text: chunkText.trim(),
+    speakers: Array.from(speakers),
+    messageIds: messageIds,
+    messageCount: messages.length,
+    timestamp: oldestTimestamp,
+  }
+}
+
+async function indexCharacterChats() {
+  const context = getContext()
+  const characterName = context.name2
+  const toastr = window.toastr
+  const $ = window.$
+
+  if (!characterName) {
+    toastr.warning("No character selected", "Qdrant Memory")
+    return
+  }
+
+  if (!settings.openaiApiKey) {
+    toastr.error("OpenAI API key not set", "Qdrant Memory")
+    return
+  }
+
+  // Create progress modal
+  const modalHtml = `
+    <div id="qdrant_index_modal" style="
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      z-index: 10000;
+      max-width: 500px;
+      width: 90%;
+    ">
+      <div style="color: #333;">
+        <h3 style="margin-top: 0;">Indexing Chats - ${characterName}</h3>
+        <p id="qdrant_index_status">Scanning for chat files...</p>
+        <div style="background: #f0f0f0; border-radius: 5px; height: 20px; margin: 15px 0; overflow: hidden;">
+          <div id="qdrant_index_progress" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <p id="qdrant_index_details" style="font-size: 0.9em; color: #666;"></p>
+        <button id="qdrant_index_cancel" class="menu_button" style="margin-top: 15px;">Cancel</button>
+      </div>
+    </div>
+    <div id="qdrant_index_overlay" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 9999;
+    "></div>
+  `
+
+  $("body").append(modalHtml)
+
+  let cancelled = false
+  $("#qdrant_index_cancel").on("click", () => {
+    cancelled = true
+    $("#qdrant_index_cancel").text("Cancelling...").prop("disabled", true)
+  })
+
+  try {
+    // Get all chat files for this character
+    const chatFiles = await getCharacterChats(characterName)
+
+    if (chatFiles.length === 0) {
+      $("#qdrant_index_status").text("No chat files found")
+      setTimeout(() => {
+        $("#qdrant_index_modal").remove()
+        $("#qdrant_index_overlay").remove()
+      }, 2000)
+      return
+    }
+
+    $("#qdrant_index_status").text(`Found ${chatFiles.length} chat files`)
+
+    const collectionName = getCollectionName(characterName)
+    await ensureCollection(characterName)
+
+    let totalChunks = 0
+    let savedChunks = 0
+    let skippedChunks = 0
+
+    // Process each chat file
+    for (let i = 0; i < chatFiles.length; i++) {
+      if (cancelled) break
+
+      const chatFile = chatFiles[i]
+      const progress = ((i / chatFiles.length) * 100).toFixed(0)
+
+      $("#qdrant_index_progress").css("width", `${progress}%`)
+      $("#qdrant_index_status").text(`Processing chat ${i + 1}/${chatFiles.length}`)
+      $("#qdrant_index_details").text(`File: ${chatFile}`)
+
+      // Load chat file
+      const chatData = await loadChatFile(characterName, chatFile)
+      if (!chatData || !Array.isArray(chatData)) continue
+
+      // Create chunks from messages
+      const chunks = createChunksFromChat(chatData, characterName)
+      totalChunks += chunks.length
+
+      // Save each chunk
+      for (const chunk of chunks) {
+        if (cancelled) break
+
+        // Check if chunk already exists
+        const exists = await chunkExists(collectionName, chunk.messageIds)
+        if (exists) {
+          skippedChunks++
+          continue
+        }
+
+        // Get participants (for group chats)
+        const participants = [characterName] // For now, just save to current character
+
+        // Save chunk
+        const success = await saveChunkToQdrant(chunk, participants)
+        if (success) {
+          savedChunks++
+        }
+
+        $("#qdrant_index_details").text(`Saved: ${savedChunks} | Skipped: ${skippedChunks} | Total: ${totalChunks}`)
+      }
+    }
+
+    // Complete
+    $("#qdrant_index_progress").css("width", "100%")
+
+    if (cancelled) {
+      $("#qdrant_index_status").text("Indexing cancelled")
+      toastr.info(`Indexed ${savedChunks} chunks before cancelling`, "Qdrant Memory")
+    } else {
+      $("#qdrant_index_status").text("Indexing complete!")
+      toastr.success(`Indexed ${savedChunks} new chunks, skipped ${skippedChunks} existing`, "Qdrant Memory")
+    }
+
+    $("#qdrant_index_cancel").text("Close")
+    $("#qdrant_index_cancel")
+      .off("click")
+      .on("click", () => {
+        $("#qdrant_index_modal").remove()
+        $("#qdrant_index_overlay").remove()
+      })
+  } catch (error) {
+    console.error("[Qdrant Memory] Error indexing chats:", error)
+    $("#qdrant_index_status").text("Error during indexing")
+    $("#qdrant_index_details").text(error.message)
+    toastr.error("Failed to index chats", "Qdrant Memory")
+  }
 }
 
 // ============================================================================
@@ -956,6 +1288,7 @@ function createSettingsUI() {
                 <button id="qdrant_test" class="menu_button">Test Connection</button>
                 <button id="qdrant_save" class="menu_button">Save Settings</button>
                 <button id="qdrant_view_memories" class="menu_button">View Memories</button>
+                <button id="qdrant_index_chats" class="menu_button" style="background-color: #28a745; color: white;">Index Character Chats</button>
             </div>
             
             <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
@@ -1071,6 +1404,10 @@ function createSettingsUI() {
 
   $("#qdrant_view_memories").on("click", () => {
     showMemoryViewer()
+  })
+
+  $("#qdrant_index_chats").on("click", () => {
+    indexCharacterChats()
   })
 }
 
