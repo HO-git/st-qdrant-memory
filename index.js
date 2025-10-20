@@ -577,63 +577,79 @@ function generateUUID() {
 // ============================================================================
 
 async function getCharacterChats(characterName) {
-  try {
-    // Get chat metadata from SillyTavern
-    const context = getContext()
-    const $ = window.$ // Declare $ variable
+  try {
+    // Get chat metadata from SillyTavern
+    const context = getContext()
+    const $ = window.$ // Declare $ variable
 
-    // Use SillyTavern's API to get chat files
-    const response = await fetch("/api/characters/chats", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        avatar_url: context.characters?.find((c) => c.name === characterName)?.avatar || characterName,
-      }),
-    })
-
-    if (!response.ok) {
-      console.error("[Qdrant Memory] Failed to get chat list:", response.statusText)
-      return []
+    // Get the character's avatar filename
+    const characterAvatar = context.characters?.find((c) => c.name === characterName)?.avatar
+    if (!characterAvatar) {
+        console.error("[Qdrant Memory] Could not find character avatar for:", characterName)
+        return []
     }
 
-    const chats = await response.json()
-    return chats || []
-  } catch (error) {
-    console.error("[Qdrant Memory] Error getting character chats:", error)
-    return []
-  }
+    // Use SillyTavern's CORRECT API to get chat files
+    const response = await fetch("/api/chats/history", { // <--- CORRECT ENDPOINT
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        avatar_url: characterAvatar, // <--- PASS THE AVATAR FILENAME
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("[Qdrant Memory] Failed to get chat list:", response.statusText)
+      return []
+    }
+
+    const data = await response.json()
+    // The API returns an object { files: [...] }, not just an array
+    return data.files || [] 
+  } catch (error) {
+    console.error("[Qdrant Memory] Error getting character chats:", error)
+    return []
+  }
 }
 
 async function loadChatFile(characterName, chatFile) {
-  try {
-    const context = getContext()
-    const $ = window.$ // Declare $ variable
-
-    const response = await fetch("/api/chats/get", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        ch_name: characterName,
-        file_name: chatFile,
-        avatar_url: context.characters?.find((c) => c.name === characterName)?.avatar || characterName,
-      }),
-    })
-
-    if (!response.ok) {
-      console.error("[Qdrant Memory] Failed to load chat file:", response.statusText)
-      return null
+  try {
+    const context = getContext()
+    const $ = window.$ // Declare $ variable
+    
+    // Get the character's avatar filename
+    const characterAvatar = context.characters?.find((c) => c.name === characterName)?.avatar
+    if (!characterAvatar) {
+        console.error("[Qdrant Memory] Could not find character avatar for:", characterName)
+        return null
     }
 
-    const chatData = await response.json()
-    return chatData
-  } catch (error) {
-    console.error("[Qdrant Memory] Error loading chat file:", error)
-    return null
-  }
+    const response = await fetch("/api/chats/load", { // <--- CORRECT ENDPOINT
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        // 'ch_name' is not needed, but 'avatar_url' is
+        file_name: chatFile,
+        avatar_url: characterAvatar, // <--- PASS THE AVATAR FILENAME
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("[Qdrant Memory] Failed to load chat file:", response.statusText)
+      return null
+    }
+
+    const chatData = await response.json()
+    // The chat messages are inside a 'chat' property
+    return chatData.chat || null 
+  } catch (error) {
+    console.error("[Qdrant Memory] Error loading chat file:", error)
+    return null
+  }
 }
 
 async function chunkExists(collectionName, messageIds) {
