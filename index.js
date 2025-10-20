@@ -579,23 +579,23 @@ async function getCharacterChats(characterName) {
   try {
     const context = getContext()
 
-    if (settings.debugMode) {
-      console.log("[Qdrant Memory] Getting chats for character:", characterName)
-      console.log("[Qdrant Memory] Context characters:", context.characters)
-    }
+    console.log("[Qdrant Memory] Getting chats for character:", characterName)
+    console.log("[Qdrant Memory] Context characters:", context.characters)
 
     // Try to get the character's avatar URL
     let avatar_url = `${characterName}.png`
     if (context.characters && Array.isArray(context.characters)) {
       const char = context.characters.find((c) => c.name === characterName)
+      console.log("[Qdrant Memory] Found character object:", char)
       if (char && char.avatar) {
         avatar_url = char.avatar
+        console.log("[Qdrant Memory] Using avatar from character:", avatar_url)
+      } else {
+        console.log("[Qdrant Memory] No avatar in character object, trying default")
       }
     }
 
-    if (settings.debugMode) {
-      console.log("[Qdrant Memory] Using avatar_url:", avatar_url)
-    }
+    console.log("[Qdrant Memory] Final avatar_url:", avatar_url)
 
     // ✅ FIXED: Use correct SillyTavern endpoint
     const response = await fetch("/api/characters/chats", {
