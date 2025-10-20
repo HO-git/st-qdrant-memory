@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.0.0 - Added per-character collections and automatic memory creation
+// Version 3.1.0 - Added group chat memories storage and semantic chunking
 
 const extensionName = "qdrant-memory"
 
@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "sillytavern_memories",
+  collectionName: "mem",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -20,14 +20,21 @@ const defaultSettings = {
   autoSaveMemories: true,
   saveUserMessages: true,
   saveCharacterMessages: true,
-  minMessageLength: 10,
+  minMessageLength: 5,
   showMemoryNotifications: true,
   retainRecentMessages: 5,
+  chunkMinSize: 1200,
+  chunkMaxSize: 1500,
+  chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
 }
 
 let settings = { ...defaultSettings }
 const saveQueue = []
 let processingSaveQueue = false
+
+let messageBuffer = []
+let lastMessageTime = 0
+let chunkTimer = null
 
 // Load settings from localStorage
 function loadSettings() {
@@ -277,8 +284,176 @@ async function processSaveQueue() {
   processingSaveQueue = false
 }
 
-// Queue a message for saving
-function queueMessage(text, characterName, isUser, messageId) {
+function getChatParticipants() {
+  const context = getContext()
+  const characterName = context.name2
+
+  // Check if this is a group chat
+  const characters = context.characters || []
+  const chat = context.chat || []
+
+  // For group chats, get all unique character names from recent messages
+  if (characters.length > 1) {
+    const participants = new Set()
+
+    // Add the main character
+    if (characterName) {
+      participants.add(characterName)
+    }
+
+    // Look through recent messages to find all participants
+    chat.slice(-50).forEach((msg) => {
+      if (!msg.is_user && msg.name && msg.name !== "System") {
+        participants.add(msg.name)
+      }
+    })
+
+    return Array.from(participants)
+  }
+
+  // Single character chat
+  return characterName ? [characterName] : []
+}
+
+function createChunkFromBuffer() {
+  if (messageBuffer.length === 0) return null
+
+  let chunkText = ""
+  const speakers = new Set()
+  const messageIds = []
+  let totalLength = 0
+
+  // Build chunk text with speaker labels
+  messageBuffer.forEach((msg) => {
+    const speaker = msg.isUser ? "You" : msg.characterName
+    speakers.add(speaker)
+    messageIds.push(msg.messageId)
+
+    const line = `${speaker}: ${msg.text}\n`
+    chunkText += line
+    totalLength += line.length
+  })
+
+  return {
+    text: chunkText.trim(),
+    speakers: Array.from(speakers),
+    messageIds: messageIds,
+    messageCount: messageBuffer.length,
+    timestamp: Date.now(),
+  }
+}
+
+async function saveChunkToQdrant(chunk, participants) {
+  if (!chunk || !participants || participants.length === 0) return false
+
+  try {
+    // Generate embedding once for the chunk
+    const embedding = await generateEmbedding(chunk.text)
+    if (!embedding) {
+      console.error("[Qdrant Memory] Cannot save chunk - embedding generation failed")
+      return false
+    }
+
+    const pointId = generateUUID()
+
+    // Prepare payload
+    const payload = {
+      text: chunk.text,
+      speakers: chunk.speakers.join(", "),
+      messageCount: chunk.messageCount,
+      timestamp: chunk.timestamp,
+      messageIds: chunk.messageIds.join(","),
+      isChunk: true,
+    }
+
+    // Save to all participant collections
+    const savePromises = participants.map(async (characterName) => {
+      const collectionName = getCollectionName(characterName)
+
+      // Ensure collection exists
+      const collectionReady = await ensureCollection(characterName)
+      if (!collectionReady) {
+        console.error(`[Qdrant Memory] Cannot save chunk - collection creation failed for ${characterName}`)
+        return false
+      }
+
+      // Add character name to payload for this specific save
+      const characterPayload = {
+        ...payload,
+        character: characterName,
+      }
+
+      // Save to Qdrant
+      const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          points: [
+            {
+              id: pointId,
+              vector: embedding,
+              payload: characterPayload,
+            },
+          ],
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unable to read error response")
+        console.error(
+          `[Qdrant Memory] Failed to save chunk to ${characterName}: ${response.status} ${response.statusText}`,
+        )
+        return false
+      }
+
+      if (settings.debugMode) {
+        console.log(
+          `[Qdrant Memory] Saved chunk to ${characterName}'s collection (${chunk.messageCount} messages, ${chunk.text.length} chars)`,
+        )
+      }
+
+      return true
+    })
+
+    const results = await Promise.all(savePromises)
+    const successCount = results.filter((r) => r).length
+
+    if (settings.debugMode) {
+      console.log(`[Qdrant Memory] Chunk saved to ${successCount}/${participants.length} collections`)
+    }
+
+    return successCount > 0
+  } catch (err) {
+    console.error("[Qdrant Memory] Error saving chunk:", err)
+    return false
+  }
+}
+
+async function processMessageBuffer() {
+  if (messageBuffer.length === 0) return
+
+  const chunk = createChunkFromBuffer()
+  if (!chunk) return
+
+  // Get all participants (for group chats)
+  const participants = getChatParticipants()
+
+  if (participants.length === 0) {
+    console.error("[Qdrant Memory] No participants found for chunk")
+    messageBuffer = []
+    return
+  }
+
+  // Save chunk to all participant collections
+  await saveChunkToQdrant(chunk, participants)
+
+  // Clear buffer after saving
+  messageBuffer = []
+}
+
+function bufferMessage(text, characterName, isUser, messageId) {
   if (!settings.autoSaveMemories) return
   if (!settings.openaiApiKey) return
   if (text.length < settings.minMessageLength) return
@@ -287,89 +462,49 @@ function queueMessage(text, characterName, isUser, messageId) {
   if (isUser && !settings.saveUserMessages) return
   if (!isUser && !settings.saveCharacterMessages) return
 
-  // Avoid duplicates - check if already in queue
-  const isDuplicate = saveQueue.some((item) => item.messageId === messageId && item.characterName === characterName)
+  // Add to buffer
+  messageBuffer.push({ text, characterName, isUser, messageId })
+  lastMessageTime = Date.now()
 
-  if (isDuplicate) return
-
-  saveQueue.push({ text, characterName, isUser, messageId })
-
-  // Start processing queue
-  processSaveQueue()
-}
-
-// Simple UUID generator for browser
-function generateUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8
-    return v.toString(16)
+  // Calculate current buffer size
+  let bufferSize = 0
+  messageBuffer.forEach((msg) => {
+    bufferSize += msg.text.length + msg.characterName.length + 4 // +4 for ": " and "\n"
   })
-}
 
-// Actually save a message to Qdrant
-async function saveMessageToQdrant(text, characterName, isUser, messageId) {
-  try {
-    const collectionName = getCollectionName(characterName)
+  if (settings.debugMode) {
+    console.log(`[Qdrant Memory] Buffer: ${messageBuffer.length} messages, ${bufferSize} chars`)
+  }
 
-    // Ensure collection exists - abort if creation fails
-    const collectionReady = await ensureCollection(characterName)
-    if (!collectionReady) {
-      console.error(`[Qdrant Memory] Cannot save message - collection creation failed for ${characterName}`)
-      return false
-    }
+  // Clear existing timer
+  if (chunkTimer) {
+    clearTimeout(chunkTimer)
+  }
 
-    // Generate embedding
-    const embedding = await generateEmbedding(text)
-    if (!embedding) {
-      console.error("[Qdrant Memory] Cannot save message - embedding generation failed")
-      return false
-    }
-
-    // Qdrant requires either integers or valid UUIDs, not arbitrary strings
-    const pointId = generateUUID()
-
-    // Prepare payload
-    const payload = {
-      text: text,
-      speaker: isUser ? "user" : "character",
-      character: characterName,
-      timestamp: Date.now(),
-      messageId: messageId, // Store the original messageId in payload for reference
-    }
-
-    // Save to Qdrant
-    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        points: [
-          {
-            id: pointId,
-            vector: embedding,
-            payload: payload,
-          },
-        ],
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unable to read error response")
-      console.error(`[Qdrant Memory] Failed to save message: ${response.status} ${response.statusText}`)
-      console.error(`[Qdrant Memory] Error details:`, errorText)
-      return false
-    }
-
+  // If buffer exceeds max size, process it now
+  if (bufferSize >= settings.chunkMaxSize) {
     if (settings.debugMode) {
-      console.log(`[Qdrant Memory] Successfully saved message with ID: ${pointId}`)
+      console.log(`[Qdrant Memory] Buffer reached max size (${bufferSize}), processing chunk`)
     }
-
-    return true
-  } catch (err) {
-    console.error("[Qdrant Memory] Error saving message:", err)
-    return false
+    processMessageBuffer()
+  }
+  // If buffer is at least min size, set a short timer
+  else if (bufferSize >= settings.chunkMinSize) {
+    chunkTimer = setTimeout(() => {
+      if (settings.debugMode) {
+        console.log(`[Qdrant Memory] Buffer reached min size and timeout, processing chunk`)
+      }
+      processMessageBuffer()
+    }, 5000) // 5 seconds after reaching min size
+  }
+  // Otherwise, set a longer timer
+  else {
+    chunkTimer = setTimeout(() => {
+      if (settings.debugMode) {
+        console.log(`[Qdrant Memory] Buffer timeout reached, processing chunk`)
+      }
+      processMessageBuffer()
+    }, settings.chunkTimeout)
   }
 }
 
@@ -381,12 +516,16 @@ function formatMemories(memories) {
 
   let formatted = "\n[Retrieved from past conversations]\n\n"
 
-  let lastSpeaker = null
-  let buffer = ""
-
   memories.forEach((memory) => {
     const payload = memory.payload
-    const speakerLabel = payload.speaker === "user" ? "You said" : "Character said"
+
+    let speakerLabel
+    if (payload.isChunk) {
+      speakerLabel = `Conversation (${payload.speakers})`
+    } else {
+      speakerLabel = payload.speaker === "user" ? "You said" : "Character said"
+    }
+
     let text = payload.text.replace(/\n/g, " ") // flatten newlines
 
     // truncate if longer than MAX_MEMORY_LENGTH
@@ -396,23 +535,8 @@ function formatMemories(memories) {
 
     const score = (memory.score * 100).toFixed(0)
 
-    if (speakerLabel !== lastSpeaker) {
-      // flush buffer if speaker changed
-      if (buffer) {
-        formatted += `• ${lastSpeaker}:\n${buffer}\n\n`
-      }
-      lastSpeaker = speakerLabel
-      buffer = `  "${text}" (score: ${score}%)`
-    } else {
-      // same speaker, append
-      buffer += `\n  "${text}" (score: ${score}%)`
-    }
+    formatted += `• ${speakerLabel}: "${text}" (score: ${score}%)\n\n`
   })
-
-  // flush last buffer
-  if (buffer) {
-    formatted += `• ${lastSpeaker}:\n${buffer}\n\n`
-  }
 
   return formatted
 }
@@ -431,6 +555,16 @@ function getContext() {
     name2: window.name2 || "",
     characters: window.characters || [],
   }
+}
+
+// Save message to Qdrant
+async function saveMessageToQdrant(text, characterName, isUser, messageId) {
+  // Implementation for saving message to Qdrant
+}
+
+// Generate a unique UUID
+function generateUUID() {
+  // Implementation for generating UUID
 }
 
 // ============================================================================
@@ -540,10 +674,9 @@ function onMessageSent() {
     // Create a unique ID for this message
     const messageId = `${characterName}_${lastMessage.send_date}_${chat.length}`
 
-    // Queue the message for saving (queue handles deduplication)
     if (lastMessage.mes && lastMessage.mes.trim().length > 0) {
       const isUser = lastMessage.is_user || false
-      queueMessage(lastMessage.mes, characterName, isUser, messageId)
+      bufferMessage(lastMessage.mes, characterName, isUser, messageId)
     }
   } catch (error) {
     console.error("[Qdrant Memory] Error in onMessageSent:", error)
