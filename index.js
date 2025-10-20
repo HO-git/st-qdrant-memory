@@ -597,12 +597,13 @@ async function getCharacterChats(characterName) {
 
     console.log("[Qdrant Memory] Final avatar_url:", avatar_url)
 
-    // ✅ FIXED: Use correct SillyTavern endpoint
+    // ✅ FIXED: Use correct SillyTavern endpoint with credentials for authenticated instances
     const response = await fetch("/api/characters/chats", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         avatar_url: avatar_url,
       }),
@@ -614,9 +615,8 @@ async function getCharacterChats(characterName) {
     }
 
     if (!response.ok) {
-      const errorText = await response.text()
       console.error("[Qdrant Memory] Failed to get chat list:", response.status, response.statusText)
-      console.error("[Qdrant Memory] Error response:", errorText)
+      console.error("[Qdrant Memory] Last error response:", lastError)
       return []
     }
 
