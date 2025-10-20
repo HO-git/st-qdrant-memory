@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.2.0 - Added index chats button
+// Version 3.0.0 - Added per-character collections and automatic memory creation
 
 const extensionName = "qdrant-memory"
 
@@ -20,11 +20,11 @@ const defaultSettings = {
   autoSaveMemories: true,
   saveUserMessages: true,
   saveCharacterMessages: true,
-  minMessageLength: 5,
+  minMessageLength: 10,
   showMemoryNotifications: true,
   retainRecentMessages: 5,
   chunkMinSize: 1200,
-  chunkMaxSize: 1500,
+  chunkMaxSize: 1400,
   chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
 }
 
@@ -577,79 +577,109 @@ function generateUUID() {
 // ============================================================================
 
 async function getCharacterChats(characterName) {
-  try {
-    // Get chat metadata from SillyTavern
-    const context = getContext()
-    const $ = window.$ // Declare $ variable
+  try {
+    const context = getContext()
 
-    // Get the character's avatar filename
-    const characterAvatar = context.characters?.find((c) => c.name === characterName)?.avatar
-    if (!characterAvatar) {
-        console.error("[Qdrant Memory] Could not find character avatar for:", characterName)
-        return []
+    console.log("[v0] Getting chats for character:", characterName)
+    console.log("[v0] Context characters:", context.characters)
+
+    // Try to get the character's avatar URL
+    let avatar_url = characterName
+    if (context.characters && Array.isArray(context.characters)) {
+      const char = context.characters.find((c) => c.name === characterName)
+      if (char && char.avatar) {
+        avatar_url = char.avatar
+      }
     }
 
-    // Use SillyTavern's CORRECT API to get chat files
-    const response = await fetch("/api/chats/history", { // <--- CORRECT ENDPOINT
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        avatar_url: characterAvatar, // <--- PASS THE AVATAR FILENAME
-      }),
-    })
+    console.log("[v0] Using avatar_url:", avatar_url)
 
-    if (!response.ok) {
-      console.error("[Qdrant Memory] Failed to get chat list:", response.statusText)
-      return []
-    }
+    // Use the correct SillyTavern API endpoint
+    const response = await fetch("/api/chats/list", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        avatar_url: avatar_url,
+      }),
+    })
 
-    const data = await response.json()
-    // The API returns an object { files: [...] }, not just an array
-    return data.files || [] 
-  } catch (error) {
-    console.error("[Qdrant Memory] Error getting character chats:", error)
-    return []
-  }
+    console.log("[v0] Response status:", response.status)
+    console.log("[v0] Response ok:", response.ok)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error("[Qdrant Memory] Failed to get chat list:", response.status, response.statusText)
+      console.error("[v0] Error response:", errorText)
+      return []
+    }
+
+    const chats = await response.json()
+    console.log("[v0] Received chats:", chats)
+
+    // Handle different response formats
+    if (Array.isArray(chats)) {
+      return chats
+    } else if (chats && Array.isArray(chats.files)) {
+      return chats.files
+    } else if (chats && Array.isArray(chats.chats)) {
+      return chats.chats
+    }
+
+    console.error("[v0] Unexpected chat list format:", chats)
+    return []
+  } catch (error) {
+    console.error("[Qdrant Memory] Error getting character chats:", error)
+    console.error("[v0] Full error:", error.stack)
+    return []
+  }
 }
 
 async function loadChatFile(characterName, chatFile) {
-  try {
-    const context = getContext()
-    const $ = window.$ // Declare $ variable
-    
-    // Get the character's avatar filename
-    const characterAvatar = context.characters?.find((c) => c.name === characterName)?.avatar
-    if (!characterAvatar) {
-        console.error("[Qdrant Memory] Could not find character avatar for:", characterName)
-        return null
+  try {
+    const context = getContext()
+
+    console.log("[v0] Loading chat file:", chatFile, "for character:", characterName)
+
+    // Try to get the character's avatar URL
+    let avatar_url = characterName
+    if (context.characters && Array.isArray(context.characters)) {
+      const char = context.characters.find((c) => c.name === characterName)
+      if (char && char.avatar) {
+        avatar_url = char.avatar
+      }
     }
 
-    const response = await fetch("/api/chats/load", { // <--- CORRECT ENDPOINT
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        // 'ch_name' is not needed, but 'avatar_url' is
-        file_name: chatFile,
-        avatar_url: characterAvatar, // <--- PASS THE AVATAR FILENAME
-      }),
-    })
+    const response = await fetch("/api/chats/get", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ch_name: characterName,
+        file_name: chatFile,
+        avatar_url: avatar_url,
+      }),
+    })
 
-    if (!response.ok) {
-      console.error("[Qdrant Memory] Failed to load chat file:", response.statusText)
-      return null
-    }
+    console.log("[v0] Load chat response status:", response.status)
 
-    const chatData = await response.json()
-    // The chat messages are inside a 'chat' property
-    return chatData.chat || null 
-  } catch (error) {
-    console.error("[Qdrant Memory] Error loading chat file:", error)
-    return null
-  }
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error("[Qdrant Memory] Failed to load chat file:", response.status, response.statusText)
+      console.error("[v0] Error response:", errorText)
+      return null
+    }
+
+    const chatData = await response.json()
+    console.log("[v0] Loaded chat with", chatData?.length || 0, "messages")
+    return chatData
+  } catch (error) {
+    console.error("[Qdrant Memory] Error loading chat file:", error)
+    console.error("[v0] Full error:", error.stack)
+    return null
+  }
 }
 
 async function chunkExists(collectionName, messageIds) {
@@ -660,7 +690,7 @@ async function chunkExists(collectionName, messageIds) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.JSON.stringify({
         filter: {
           should: messageIds.map((id) => ({
             key: "messageIds",
