@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "mem",
+  collectionName: "sillytavern_memories",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -594,8 +594,8 @@ async function getCharacterChats(characterName) {
 
     console.log("[v0] Using avatar_url:", avatar_url)
 
-    // Use the correct SillyTavern API endpoint
-    const response = await fetch("/api/chats/list", {
+    // Try the correct SillyTavern API endpoint for getting character chats
+    const response = await fetch("/api/characters/chats", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -615,19 +615,22 @@ async function getCharacterChats(characterName) {
       return []
     }
 
-    const chats = await response.json()
-    console.log("[v0] Received chats:", chats)
+    const data = await response.json()
+    console.log("[v0] Received data:", data)
 
     // Handle different response formats
-    if (Array.isArray(chats)) {
-      return chats
-    } else if (chats && Array.isArray(chats.files)) {
-      return chats.files
-    } else if (chats && Array.isArray(chats.chats)) {
-      return chats.chats
+    if (Array.isArray(data)) {
+      console.log("[v0] Data is array, length:", data.length)
+      return data
+    } else if (data && Array.isArray(data.files)) {
+      console.log("[v0] Data has files array, length:", data.files.length)
+      return data.files
+    } else if (data && Array.isArray(data.chats)) {
+      console.log("[v0] Data has chats array, length:", data.chats.length)
+      return data.chats
     }
 
-    console.error("[v0] Unexpected chat list format:", chats)
+    console.error("[v0] Unexpected chat list format:", data)
     return []
   } catch (error) {
     console.error("[Qdrant Memory] Error getting character chats:", error)
@@ -690,7 +693,7 @@ async function chunkExists(collectionName, messageIds) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.JSON.stringify({
+      body: JSON.stringify({
         filter: {
           should: messageIds.map((id) => ({
             key: "messageIds",
