@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "sillytavern_memories",
+  collectionName: "mem",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
