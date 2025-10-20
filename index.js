@@ -594,8 +594,7 @@ async function getCharacterChats(characterName) {
 
     console.log("[v0] Using avatar_url:", avatar_url)
 
-    // Try the correct SillyTavern API endpoint for getting character chats
-    const response = await fetch("/api/characters/chats", {
+    const response = await fetch("/api/chats/history", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -618,16 +617,12 @@ async function getCharacterChats(characterName) {
     const data = await response.json()
     console.log("[v0] Received data:", data)
 
-    // Handle different response formats
-    if (Array.isArray(data)) {
-      console.log("[v0] Data is array, length:", data.length)
-      return data
-    } else if (data && Array.isArray(data.files)) {
+    if (data && Array.isArray(data.files)) {
       console.log("[v0] Data has files array, length:", data.files.length)
       return data.files
-    } else if (data && Array.isArray(data.chats)) {
-      console.log("[v0] Data has chats array, length:", data.chats.length)
-      return data.chats
+    } else if (Array.isArray(data)) {
+      console.log("[v0] Data is array, length:", data.length)
+      return data
     }
 
     console.error("[v0] Unexpected chat list format:", data)
@@ -654,7 +649,7 @@ async function loadChatFile(characterName, chatFile) {
       }
     }
 
-    const response = await fetch("/api/chats/get", {
+    const response = await fetch("/api/chats/load", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -677,7 +672,8 @@ async function loadChatFile(characterName, chatFile) {
 
     const chatData = await response.json()
     console.log("[v0] Loaded chat with", chatData?.length || 0, "messages")
-    return chatData
+
+    return chatData.chat || chatData
   } catch (error) {
     console.error("[Qdrant Memory] Error loading chat file:", error)
     console.error("[v0] Full error:", error.stack)
