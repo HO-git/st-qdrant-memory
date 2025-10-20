@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.0.0 - Added per-character collections and automatic memory creation
+// Version 3.0.1 - Fixed API endpoints for chat indexing
 
 const extensionName = "qdrant-memory"
 
@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "mem",
+  collectionName: "sillytavern_memories",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -543,9 +543,9 @@ function formatMemories(memories) {
 
 // Get current context
 function getContext() {
-  const SillyTavern = window.SillyTavern // Declare SillyTavern variable
-  const $ = window.$ // Declare $ variable
-  const toastr = window.toastr // Declare toastr variable
+  const SillyTavern = window.SillyTavern
+  const $ = window.$
+  const toastr = window.toastr
 
   if (typeof SillyTavern !== "undefined" && SillyTavern.getContext) {
     return SillyTavern.getContext()
@@ -564,7 +564,6 @@ async function saveMessageToQdrant(text, characterName, isUser, messageId) {
 
 // Generate a unique UUID
 function generateUUID() {
-  // Implementation for generating UUID
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     var r = (Math.random() * 16) | 0,
       v = c == "x" ? r : (r & 0x3) | 0x8
@@ -573,18 +572,20 @@ function generateUUID() {
 }
 
 // ============================================================================
-// CHAT INDEXING FUNCTIONS
+// CHAT INDEXING FUNCTIONS - FIXED ENDPOINTS
 // ============================================================================
 
 async function getCharacterChats(characterName) {
   try {
     const context = getContext()
 
-    console.log("[v0] Getting chats for character:", characterName)
-    console.log("[v0] Context characters:", context.characters)
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Getting chats for character:", characterName)
+      console.log("[Qdrant Memory] Context characters:", context.characters)
+    }
 
     // Try to get the character's avatar URL
-    let avatar_url = characterName
+    let avatar_url = `${characterName}.png`
     if (context.characters && Array.isArray(context.characters)) {
       const char = context.characters.find((c) => c.name === characterName)
       if (char && char.avatar) {
@@ -592,9 +593,12 @@ async function getCharacterChats(characterName) {
       }
     }
 
-    console.log("[v0] Using avatar_url:", avatar_url)
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Using avatar_url:", avatar_url)
+    }
 
-    const response = await fetch("/api/chats/history", {
+    // ✅ FIXED: Use correct SillyTavern endpoint
+    const response = await fetch("/api/characters/chats", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -604,32 +608,49 @@ async function getCharacterChats(characterName) {
       }),
     })
 
-    console.log("[v0] Response status:", response.status)
-    console.log("[v0] Response ok:", response.ok)
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Response status:", response.status)
+      console.log("[Qdrant Memory] Response ok:", response.ok)
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
       console.error("[Qdrant Memory] Failed to get chat list:", response.status, response.statusText)
-      console.error("[v0] Error response:", errorText)
+      console.error("[Qdrant Memory] Error response:", errorText)
       return []
     }
 
     const data = await response.json()
-    console.log("[v0] Received data:", data)
-
-    if (data && Array.isArray(data.files)) {
-      console.log("[v0] Data has files array, length:", data.files.length)
-      return data.files
-    } else if (Array.isArray(data)) {
-      console.log("[v0] Data is array, length:", data.length)
-      return data
+    
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Received data:", data)
     }
 
-    console.error("[v0] Unexpected chat list format:", data)
+    // Handle different response formats
+    if (Array.isArray(data)) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Data is array, length:", data.length)
+      }
+      return data
+    } else if (data && Array.isArray(data.files)) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Data has files array, length:", data.files.length)
+      }
+      return data.files
+    } else if (data && Array.isArray(data.chats)) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Data has chats array, length:", data.chats.length)
+      }
+      return data.chats
+    }
+
+    console.error("[Qdrant Memory] Unexpected chat list format:", data)
     return []
   } catch (error) {
     console.error("[Qdrant Memory] Error getting character chats:", error)
-    console.error("[v0] Full error:", error.stack)
+    if (settings.debugMode) {
+      console.error("[Qdrant Memory] Full error:", error.stack)
+    }
     return []
   }
 }
@@ -638,10 +659,12 @@ async function loadChatFile(characterName, chatFile) {
   try {
     const context = getContext()
 
-    console.log("[v0] Loading chat file:", chatFile, "for character:", characterName)
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Loading chat file:", chatFile, "for character:", characterName)
+    }
 
     // Try to get the character's avatar URL
-    let avatar_url = characterName
+    let avatar_url = `${characterName}.png`
     if (context.characters && Array.isArray(context.characters)) {
       const char = context.characters.find((c) => c.name === characterName)
       if (char && char.avatar) {
@@ -649,7 +672,8 @@ async function loadChatFile(characterName, chatFile) {
       }
     }
 
-    const response = await fetch("/api/chats/load", {
+    // ✅ FIXED: Use correct SillyTavern endpoint
+    const response = await fetch("/api/chats/get", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -661,22 +685,29 @@ async function loadChatFile(characterName, chatFile) {
       }),
     })
 
-    console.log("[v0] Load chat response status:", response.status)
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Load chat response status:", response.status)
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
       console.error("[Qdrant Memory] Failed to load chat file:", response.status, response.statusText)
-      console.error("[v0] Error response:", errorText)
+      console.error("[Qdrant Memory] Error response:", errorText)
       return null
     }
 
     const chatData = await response.json()
-    console.log("[v0] Loaded chat with", chatData?.length || 0, "messages")
-
-    return chatData.chat || chatData
+    
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Loaded chat with", chatData?.length || 0, "messages")
+    }
+    
+    return chatData
   } catch (error) {
     console.error("[Qdrant Memory] Error loading chat file:", error)
-    console.error("[v0] Full error:", error.stack)
+    if (settings.debugMode) {
+      console.error("[Qdrant Memory] Full error:", error.stack)
+    }
     return null
   }
 }
@@ -1017,7 +1048,7 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
         console.log(`[Qdrant Memory] Injected ${memories.length} memories at position ${insertIndex}`)
       }
 
-      const toastr = window.toastr // Declare toastr variable
+      const toastr = window.toastr
       if (settings.showMemoryNotifications) {
         toastr.info(`Retrieved ${memories.length} relevant memories`, "Qdrant Memory", { timeOut: 2000 })
       }
@@ -1095,7 +1126,7 @@ async function showMemoryViewer() {
   const characterName = context.name2
 
   if (!characterName) {
-    const toastr = window.toastr // Declare toastr variable
+    const toastr = window.toastr
     toastr.warning("No character selected", "Qdrant Memory")
     return
   }
@@ -1104,7 +1135,7 @@ async function showMemoryViewer() {
   const info = await getCollectionInfo(collectionName)
 
   if (!info) {
-    const toastr = window.toastr // Declare toastr variable
+    const toastr = window.toastr
     toastr.warning(`No memories found for ${characterName}`, "Qdrant Memory")
     return
   }
@@ -1153,7 +1184,7 @@ async function showMemoryViewer() {
         "></div>
     `
 
-  const $ = window.$ // Declare $ variable
+  const $ = window.$
   $("body").append(modalHtml)
 
   // Close modal
@@ -1171,12 +1202,12 @@ async function showMemoryViewer() {
       $(this).prop("disabled", true).text("Deleting...")
       const success = await deleteCollection(collectionName)
       if (success) {
-        const toastr = window.toastr // Declare toastr variable
+        const toastr = window.toastr
         toastr.success(`All memories deleted for ${characterName}`, "Qdrant Memory")
         $("#qdrant_modal").remove()
         $("#qdrant_overlay").remove()
       } else {
-        const toastr = window.toastr // Declare toastr variable
+        const toastr = window.toastr
         toastr.error("Failed to delete memories", "Qdrant Memory")
         $(this).prop("disabled", false).text("Delete All Memories")
       }
@@ -1188,7 +1219,7 @@ async function showMemoryViewer() {
 function createSettingsUI() {
   const settingsHtml = `
         <div class="qdrant-memory-settings">
-            <h3>Qdrant Memory Extension v3.0</h3>
+            <h3>Qdrant Memory Extension v3.0.1</h3>
             <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
                 Automatic memory creation with per-character collections
             </p>
@@ -1340,7 +1371,7 @@ function createSettingsUI() {
         </div>
     `
 
-  const $ = window.$ // Declare $ variable
+  const $ = window.$
   $("#extensions_settings2").append(settingsHtml)
 
   // Event handlers
@@ -1458,12 +1489,11 @@ function createSettingsUI() {
 
 // Extension initialization
 window.jQuery(async () => {
-  // Declare jQuery variable
   loadSettings()
   createSettingsUI()
 
   // Hook into message events for automatic saving
-  const eventSource = window.eventSource // Declare eventSource variable
+  const eventSource = window.eventSource
   if (typeof eventSource !== "undefined" && eventSource.on) {
     eventSource.on("MESSAGE_RECEIVED", onMessageSent)
     eventSource.on("USER_MESSAGE_RENDERED", onMessageSent)
@@ -1483,5 +1513,5 @@ window.jQuery(async () => {
     }, 2000)
   }
 
-  console.log("[Qdrant Memory] Extension loaded successfully (v3.0.0 - per-character collections + auto-save)")
+  console.log("[Qdrant Memory] Extension loaded successfully (v3.0.1 - fixed API endpoints)")
 })
