@@ -741,10 +741,33 @@ async function loadChatFile(characterName, chatFile) {
     const chatData = await response.json()
     
     if (settings.debugMode) {
-      console.log("[Qdrant Memory] Loaded chat with", chatData?.length || 0, "messages")
+      console.log("[Qdrant Memory] Raw chat data received:", chatData)
+      console.log("[Qdrant Memory] Chat data type:", typeof chatData)
+      console.log("[Qdrant Memory] Is array?", Array.isArray(chatData))
+      if (chatData) {
+        console.log("[Qdrant Memory] Chat data keys:", Object.keys(chatData))
+      }
     }
     
-    return chatData
+    // Handle different response formats
+    let messages = null
+    if (Array.isArray(chatData)) {
+      messages = chatData
+    } else if (chatData && Array.isArray(chatData.chat)) {
+      messages = chatData.chat
+    } else if (chatData && Array.isArray(chatData.messages)) {
+      messages = chatData.messages
+    } else if (chatData && typeof chatData === 'object') {
+      // Maybe the entire response is the chat data
+      messages = [chatData]
+    }
+    
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Extracted messages:", messages)
+      console.log("[Qdrant Memory] Loaded chat with", messages?.length || 0, "messages")
+    }
+    
+    return messages
   } catch (error) {
     console.error("[Qdrant Memory] Error loading chat file:", error)
     if (settings.debugMode) {
