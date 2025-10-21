@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "mem",
+  collectionName: "sillytavern_memories",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -694,6 +694,15 @@ async function loadChatFile(characterName, chatFile) {
       } else {
         return null
       }
+    }
+
+    // CRITICAL: Remove .jsonl extension as the API adds it back
+    // The endpoint does: `${file_name}.jsonl`, so we must send without extension
+    const fileNameWithoutExt = chatFile.replace(/\.jsonl$/, '')
+
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Original filename:", chatFile)
+      console.log("[Qdrant Memory] Sending without extension:", fileNameWithoutExt)
     }
 
     // Try to get the character's avatar URL
