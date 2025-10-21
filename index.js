@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "sillytavern_memories",
+  collectionName: "mem",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -717,7 +717,7 @@ async function loadChatFile(characterName, chatFile) {
     if (settings.debugMode) {
       console.log("[Qdrant Memory] Loading with params:", {
         ch_name: characterName,
-        file_name: chatFile,
+        file_name: fileNameWithoutExt,  // Use the variable without extension!
         avatar_url: avatar_url
       })
     }
@@ -731,7 +731,7 @@ async function loadChatFile(characterName, chatFile) {
       credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         ch_name: characterName,
-        file_name: chatFile,
+        file_name: fileNameWithoutExt, // Send WITHOUT .jsonl as API adds it
         avatar_url: avatar_url,
       }),
     })
