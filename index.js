@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "sillytavern_memories",
+  collectionName: "mem",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -615,8 +615,9 @@ async function getCharacterChats(characterName) {
     }
 
     if (!response.ok) {
+      const errorText = await response.text()
       console.error("[Qdrant Memory] Failed to get chat list:", response.status, response.statusText)
-      console.error("[Qdrant Memory] Last error response:", lastError)
+      console.error("[Qdrant Memory] Error response:", errorText)
       return []
     }
 
@@ -626,26 +627,48 @@ async function getCharacterChats(characterName) {
       console.log("[Qdrant Memory] Received data:", data)
     }
 
-    // Handle different response formats
+    // Handle different response formats - extract just the filenames
+    let chatFiles = []
+    
     if (Array.isArray(data)) {
-      if (settings.debugMode) {
-        console.log("[Qdrant Memory] Data is array, length:", data.length)
+      // If it's an array of strings, use directly
+      if (typeof data[0] === 'string') {
+        chatFiles = data
       }
-      return data
+      // If it's an array of objects with file_name
+      else if (data[0] && data[0].file_name) {
+        chatFiles = data.map(item => item.file_name)
+      }
+      // If it's an array of other objects, try to extract filename
+      else {
+        chatFiles = data.map(item => {
+          if (typeof item === 'string') return item
+          if (item.file_name) return item.file_name
+          if (item.filename) return item.filename
+          return null
+        }).filter(f => f !== null)
+      }
     } else if (data && Array.isArray(data.files)) {
-      if (settings.debugMode) {
-        console.log("[Qdrant Memory] Data has files array, length:", data.files.length)
-      }
-      return data.files
+      chatFiles = data.files.map(item => {
+        if (typeof item === 'string') return item
+        if (item.file_name) return item.file_name
+        if (item.filename) return item.filename
+        return null
+      }).filter(f => f !== null)
     } else if (data && Array.isArray(data.chats)) {
-      if (settings.debugMode) {
-        console.log("[Qdrant Memory] Data has chats array, length:", data.chats.length)
-      }
-      return data.chats
+      chatFiles = data.chats.map(item => {
+        if (typeof item === 'string') return item
+        if (item.file_name) return item.file_name
+        if (item.filename) return item.filename
+        return null
+      }).filter(f => f !== null)
     }
 
-    console.error("[Qdrant Memory] Unexpected chat list format:", data)
-    return []
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Extracted filenames:", chatFiles)
+    }
+
+    return chatFiles
   } catch (error) {
     console.error("[Qdrant Memory] Error getting character chats:", error)
     if (settings.debugMode) {
@@ -663,6 +686,16 @@ async function loadChatFile(characterName, chatFile) {
       console.log("[Qdrant Memory] Loading chat file:", chatFile, "for character:", characterName)
     }
 
+    // Ensure chatFile is a string
+    if (typeof chatFile !== 'string') {
+      console.error("[Qdrant Memory] chatFile is not a string:", chatFile)
+      if (chatFile && chatFile.file_name) {
+        chatFile = chatFile.file_name
+      } else {
+        return null
+      }
+    }
+
     // Try to get the character's avatar URL
     let avatar_url = `${characterName}.png`
     if (context.characters && Array.isArray(context.characters)) {
@@ -672,12 +705,21 @@ async function loadChatFile(characterName, chatFile) {
       }
     }
 
-    // ✅ FIXED: Use correct SillyTavern endpoint
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Loading with params:", {
+        ch_name: characterName,
+        file_name: chatFile,
+        avatar_url: avatar_url
+      })
+    }
+
+    // ✅ FIXED: Use correct SillyTavern endpoint with credentials
     const response = await fetch("/api/chats/get", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         ch_name: characterName,
         file_name: chatFile,
