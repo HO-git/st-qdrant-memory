@@ -514,7 +514,7 @@ const MAX_MEMORY_LENGTH = 1500 // adjust per your preference
 function formatMemories(memories) {
   if (!memories || memories.length === 0) return ""
 
-  let formatted = "\n[Retrieved from past conversations]\n\n"
+  let formatted = "\n[Memory logs]\n\n"
 
   memories.forEach((memory) => {
     const payload = memory.payload
