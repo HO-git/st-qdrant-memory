@@ -20,11 +20,11 @@ const defaultSettings = {
   autoSaveMemories: true,
   saveUserMessages: true,
   saveCharacterMessages: true,
-  minMessageLength: 10,
+  minMessageLength: 5,
   showMemoryNotifications: true,
   retainRecentMessages: 5,
   chunkMinSize: 1200,
-  chunkMaxSize: 1400,
+  chunkMaxSize: 1500,
   chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
 }
 
@@ -527,11 +527,6 @@ function formatMemories(memories) {
     }
 
     let text = payload.text.replace(/\n/g, " ") // flatten newlines
-
-    // truncate if longer than MAX_MEMORY_LENGTH
-    if (text.length > MAX_MEMORY_LENGTH) {
-      text = text.substring(0, MAX_MEMORY_LENGTH) + "... (truncated)"
-    }
 
     const score = (memory.score * 100).toFixed(0)
 
