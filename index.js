@@ -358,24 +358,8 @@ async function saveChunkToQdrant(chunk, participants) {
   if (!chunk || !participants || participants.length === 0) return false
 
   try {
-    // Format the date for the chunk
-    let textWithDate = chunk.text
-    if (chunk.timestamp) {
-      try {
-        const dateObj = new Date(chunk.timestamp)
-        const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
-        textWithDate = `[${dateStr}] ${chunk.text}`
-        
-        if (settings.debugMode) {
-          console.log(`[Qdrant Memory] Adding date prefix: [${dateStr}]`)
-        }
-      } catch (e) {
-        console.warn("[Qdrant Memory] Invalid timestamp for chunk:", chunk.timestamp, e)
-      }
-    }
-
-    // Generate embedding for the date-prefixed text
-    const embedding = await generateEmbedding(textWithDate)
+    // Generate embedding for the chunk text (already has date prefix from creation)
+    const embedding = await generateEmbedding(chunk.text)
     if (!embedding) {
       console.error("[Qdrant Memory] Cannot save chunk - embedding generation failed")
       return false
@@ -383,9 +367,9 @@ async function saveChunkToQdrant(chunk, participants) {
 
     const pointId = generateUUID()
 
-    // Prepare payload with date-prefixed text
+    // Prepare payload - chunk.text already includes date prefix
     const payload = {
-      text: textWithDate, // Save the date-prefixed version
+      text: chunk.text, // Already has date prefix from createChunkFrom* functions
       speakers: chunk.speakers.join(", "),
       messageCount: chunk.messageCount,
       timestamp: chunk.timestamp, // Keep original timestamp for filtering
@@ -541,7 +525,7 @@ const MAX_MEMORY_LENGTH = 1500 // adjust per your preference
 function formatMemories(memories) {
   if (!memories || memories.length === 0) return ""
 
-  let formatted = "\n[Past chat memories]\n\n"
+  let formatted = "\n[Retrieved from past conversations]\n\n"
 
   memories.forEach((memory) => {
     const payload = memory.payload
@@ -912,16 +896,16 @@ function createChunkFromMessages(messages) {
   })
 
   // Format date prefix for the chunk
- // let finalText = chunkText.trim()
-  //if (oldestTimestamp !== Number.POSITIVE_INFINITY) {
-    //try {
-      //const dateObj = new Date(oldestTimestamp)
-     // const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
-      //finalText = `[${dateStr}]\n${finalText}`
-    //} catch (e) {
-      //console.warn("[Qdrant Memory] Invalid timestamp for chunk:", oldestTimestamp, e)
-    //}
-  //}
+  let finalText = chunkText.trim()
+  if (oldestTimestamp !== Number.POSITIVE_INFINITY) {
+    try {
+      const dateObj = new Date(oldestTimestamp)
+      const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
+      finalText = `[${dateStr}]\n${finalText}`
+    } catch (e) {
+      console.warn("[Qdrant Memory] Invalid timestamp for chunk:", oldestTimestamp, e)
+    }
+  }
 
   return {
     text: finalText,
