@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "sillytavern_memories",
+  collectionName: "mem",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -20,11 +20,11 @@ const defaultSettings = {
   autoSaveMemories: true,
   saveUserMessages: true,
   saveCharacterMessages: true,
-  minMessageLength: 10,
+  minMessageLength: 5,
   showMemoryNotifications: true,
   retainRecentMessages: 5,
   chunkMinSize: 1200,
-  chunkMaxSize: 1400,
+  chunkMaxSize: 1500,
   chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
 }
 
@@ -541,7 +541,7 @@ const MAX_MEMORY_LENGTH = 1500 // adjust per your preference
 function formatMemories(memories) {
   if (!memories || memories.length === 0) return ""
 
-  let formatted = "\n[Retrieved from past conversations]\n\n"
+  let formatted = "\n[Past chat memories]\n\n"
 
   memories.forEach((memory) => {
     const payload = memory.payload
@@ -554,11 +554,6 @@ function formatMemories(memories) {
     }
 
     let text = payload.text.replace(/\n/g, " ") // flatten newlines
-
-    // truncate if longer than MAX_MEMORY_LENGTH
-    if (text.length > MAX_MEMORY_LENGTH) {
-      text = text.substring(0, MAX_MEMORY_LENGTH) + "... (truncated)"
-    }
 
     const score = (memory.score * 100).toFixed(0)
 
@@ -1386,7 +1381,7 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
-                <input type="range" id="qdrant_memory_limit" min="1" max="10" value="${settings.memoryLimit}" 
+                <input type="range" id="qdrant_memory_limit" min="1" max="30" value="${settings.memoryLimit}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Maximum memories to retrieve per generation</small>
             </div>
@@ -1400,14 +1395,14 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Memory Position:</strong> <span id="memory_position_display">${settings.memoryPosition}</span></label>
-                <input type="range" id="qdrant_memory_position" min="1" max="10" value="${settings.memoryPosition}" 
+                <input type="range" id="qdrant_memory_position" min="1" max="30" value="${settings.memoryPosition}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">How many messages from the end to insert memories</small>
             </div>
             
             <div style="margin: 10px 0;">
                 <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
-                <input type="range" id="qdrant_retain_recent" min="0" max="20" value="${settings.retainRecentMessages}" 
+                <input type="range" id="qdrant_retain_recent" min="0" max="50" value="${settings.retainRecentMessages}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
             </div>
