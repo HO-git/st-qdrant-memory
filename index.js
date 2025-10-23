@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.0.1 - Fixed API endpoints for chat indexing
+// Version 3.1.0 - Added temporal context with visible dates in memory chunks
 
 const extensionName = "qdrant-memory"
 
@@ -8,7 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "mem",
+  collectionName: "sillytavern_memories",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -20,11 +20,11 @@ const defaultSettings = {
   autoSaveMemories: true,
   saveUserMessages: true,
   saveCharacterMessages: true,
-  minMessageLength: 5,
+  minMessageLength: 10,
   showMemoryNotifications: true,
   retainRecentMessages: 5,
   chunkMinSize: 1200,
-  chunkMaxSize: 1500,
+  chunkMaxSize: 1400,
   chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
 }
 
@@ -322,6 +322,7 @@ function createChunkFromBuffer() {
   const speakers = new Set()
   const messageIds = []
   let totalLength = 0
+  const currentTimestamp = Date.now()
 
   // Build chunk text with speaker labels
   messageBuffer.forEach((msg) => {
@@ -334,12 +335,22 @@ function createChunkFromBuffer() {
     totalLength += line.length
   })
 
+  // Format date prefix
+  let finalText = chunkText.trim()
+  try {
+    const dateObj = new Date(currentTimestamp)
+    const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
+    finalText = `[${dateStr}]\n${finalText}`
+  } catch (e) {
+    console.warn("[Qdrant Memory] Error formatting date:", e)
+  }
+
   return {
-    text: chunkText.trim(),
+    text: finalText,
     speakers: Array.from(speakers),
     messageIds: messageIds,
     messageCount: messageBuffer.length,
-    timestamp: Date.now(),
+    timestamp: currentTimestamp,
   }
 }
 
@@ -347,8 +358,24 @@ async function saveChunkToQdrant(chunk, participants) {
   if (!chunk || !participants || participants.length === 0) return false
 
   try {
-    // Generate embedding once for the chunk
-    const embedding = await generateEmbedding(chunk.text)
+    // Format the date for the chunk
+    let textWithDate = chunk.text
+    if (chunk.timestamp) {
+      try {
+        const dateObj = new Date(chunk.timestamp)
+        const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
+        textWithDate = `[${dateStr}] ${chunk.text}`
+        
+        if (settings.debugMode) {
+          console.log(`[Qdrant Memory] Adding date prefix: [${dateStr}]`)
+        }
+      } catch (e) {
+        console.warn("[Qdrant Memory] Invalid timestamp for chunk:", chunk.timestamp, e)
+      }
+    }
+
+    // Generate embedding for the date-prefixed text
+    const embedding = await generateEmbedding(textWithDate)
     if (!embedding) {
       console.error("[Qdrant Memory] Cannot save chunk - embedding generation failed")
       return false
@@ -356,12 +383,12 @@ async function saveChunkToQdrant(chunk, participants) {
 
     const pointId = generateUUID()
 
-    // Prepare payload
+    // Prepare payload with date-prefixed text
     const payload = {
-      text: chunk.text,
+      text: textWithDate, // Save the date-prefixed version
       speakers: chunk.speakers.join(", "),
       messageCount: chunk.messageCount,
-      timestamp: chunk.timestamp,
+      timestamp: chunk.timestamp, // Keep original timestamp for filtering
       messageIds: chunk.messageIds.join(","),
       isChunk: true,
     }
@@ -514,7 +541,7 @@ const MAX_MEMORY_LENGTH = 1500 // adjust per your preference
 function formatMemories(memories) {
   if (!memories || memories.length === 0) return ""
 
-  let formatted = "\n[Past chat memories]\n\n"
+  let formatted = "\n[Retrieved from past conversations]\n\n"
 
   memories.forEach((memory) => {
     const payload = memory.payload
@@ -527,6 +554,11 @@ function formatMemories(memories) {
     }
 
     let text = payload.text.replace(/\n/g, " ") // flatten newlines
+
+    // truncate if longer than MAX_MEMORY_LENGTH
+    if (text.length > MAX_MEMORY_LENGTH) {
+      text = text.substring(0, MAX_MEMORY_LENGTH) + "... (truncated)"
+    }
 
     const score = (memory.score * 100).toFixed(0)
 
@@ -884,12 +916,24 @@ function createChunkFromMessages(messages) {
     }
   })
 
+  // Format date prefix for the chunk
+  let finalText = chunkText.trim()
+  if (oldestTimestamp !== Number.POSITIVE_INFINITY) {
+    try {
+      const dateObj = new Date(oldestTimestamp)
+      const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
+      finalText = `[${dateStr}]\n${finalText}`
+    } catch (e) {
+      console.warn("[Qdrant Memory] Invalid timestamp for chunk:", oldestTimestamp, e)
+    }
+  }
+
   return {
-    text: chunkText.trim(),
+    text: finalText,
     speakers: Array.from(speakers),
     messageIds: messageIds,
     messageCount: messages.length,
-    timestamp: oldestTimestamp,
+    timestamp: oldestTimestamp !== Number.POSITIVE_INFINITY ? oldestTimestamp : Date.now(),
   }
 }
 
@@ -1288,9 +1332,9 @@ async function showMemoryViewer() {
 function createSettingsUI() {
   const settingsHtml = `
         <div class="qdrant-memory-settings">
-            <h3>Qdrant Memory Extension v3.0.1</h3>
+            <h3>Qdrant Memory Extension v3.1.0</h3>
             <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
-                Automatic memory creation with per-character collections
+                Automatic memory creation with temporal context
             </p>
             
             <div style="margin: 15px 0;">
@@ -1342,7 +1386,7 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
-                <input type="range" id="qdrant_memory_limit" min="1" max="30" value="${settings.memoryLimit}" 
+                <input type="range" id="qdrant_memory_limit" min="1" max="10" value="${settings.memoryLimit}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Maximum memories to retrieve per generation</small>
             </div>
@@ -1356,14 +1400,14 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Memory Position:</strong> <span id="memory_position_display">${settings.memoryPosition}</span></label>
-                <input type="range" id="qdrant_memory_position" min="1" max="30" value="${settings.memoryPosition}" 
+                <input type="range" id="qdrant_memory_position" min="1" max="10" value="${settings.memoryPosition}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">How many messages from the end to insert memories</small>
             </div>
             
             <div style="margin: 10px 0;">
                 <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
-                <input type="range" id="qdrant_retain_recent" min="0" max="50" value="${settings.retainRecentMessages}" 
+                <input type="range" id="qdrant_retain_recent" min="0" max="20" value="${settings.retainRecentMessages}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
             </div>
@@ -1582,5 +1626,5 @@ window.jQuery(async () => {
     }, 2000)
   }
 
-  console.log("[Qdrant Memory] Extension loaded successfully (v3.0.1 - fixed API endpoints)")
+  console.log("[Qdrant Memory] Extension loaded successfully (v3.1.0 - temporal context with dates)")
 })
