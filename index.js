@@ -912,16 +912,16 @@ function createChunkFromMessages(messages) {
   })
 
   // Format date prefix for the chunk
-  let finalText = chunkText.trim()
-  if (oldestTimestamp !== Number.POSITIVE_INFINITY) {
-    try {
-      const dateObj = new Date(oldestTimestamp)
-      const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
-      finalText = `[${dateStr}]\n${finalText}`
-    } catch (e) {
-      console.warn("[Qdrant Memory] Invalid timestamp for chunk:", oldestTimestamp, e)
-    }
-  }
+ // let finalText = chunkText.trim()
+  //if (oldestTimestamp !== Number.POSITIVE_INFINITY) {
+    //try {
+      //const dateObj = new Date(oldestTimestamp)
+     // const dateStr = dateObj.toISOString().split("T")[0] // YYYY-MM-DD format
+      //finalText = `[${dateStr}]\n${finalText}`
+    //} catch (e) {
+      //console.warn("[Qdrant Memory] Invalid timestamp for chunk:", oldestTimestamp, e)
+    //}
+  //}
 
   return {
     text: finalText,
