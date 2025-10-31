@@ -1,248 +1,47 @@
 /* Qdrant Memory Extension Styles */
 
 .qdrant-memory-settings {
-    margin: 12px 0;
-    border-radius: var(--SmartThemeBlockRadius, 8px);
-    overflow: hidden;
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.3));
-    background: var(--SmartThemeBlockColor, rgba(0, 0, 0, 0.1));
-    color: var(--SmartThemeBodyColor, #d7d7d7);
+    padding: 15px;
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.1));
+    border-radius: 10px;
+    margin: 10px 0;
 }
 
-.qdrant-memory-settings__summary {
-    list-style: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    font-size: 1rem;
-    font-weight: 600;
-    color: inherit;
-    background: var(--SmartThemeBlockInnerColor, rgba(0, 0, 0, 0.2));
-}
-
-.qdrant-memory-settings__summary:hover {
-    background: var(--SmartThemeBlockInnerHoverColor, rgba(0, 0, 0, 0.28));
-}
-
-.qdrant-memory-settings__summary:focus-visible {
-    outline: 2px solid var(--SmartThemeAccentColor, #4da3ff);
-    outline-offset: 2px;
-}
-
-.qdrant-memory-settings__summary::-webkit-details-marker {
-    display: none;
-}
-
-.qdrant-memory-settings__summary::after {
-    content: '\25BC';
-    font-size: 0.85em;
-    opacity: 0.7;
-    transition: transform 0.2s ease;
-    margin-left: 8px;
-}
-
-.qdrant-memory-settings[open] > .qdrant-memory-settings__summary::after {
-    transform: rotate(180deg);
-}
-
-.qdrant-memory-settings__summary-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.qdrant-memory-settings__title {
-    color: inherit;
-}
-
-.qdrant-memory-settings__subtitle {
-    font-size: 0.85em;
-    color: var(--SmartThemeHintColor, rgba(255, 255, 255, 0.6));
-}
-
-.qdrant-memory-settings__content {
-    padding: 16px;
-    background: var(--SmartThemeBlockInnerColor, rgba(0, 0, 0, 0.2));
-    border-top: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.3));
-}
-
-.qdrant-settings-heading {
-    margin: 20px 0 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    color: inherit;
-}
-
-.qdrant-settings-group,
-.qdrant-settings-field {
-    margin-bottom: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.qdrant-settings-label {
-    font-weight: 600;
-    color: inherit;
-}
-
-.qdrant-settings-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    color: inherit;
-}
-
-.qdrant-settings-checkbox input {
-    flex-shrink: 0;
-}
-
-.qdrant-settings-input {
-    width: 100%;
-}
-
-.qdrant-settings-range {
-    width: 100%;
-    cursor: pointer;
-}
-
-.qdrant-settings-hint {
-    font-size: 0.85em;
-    color: var(--SmartThemeHintColor, rgba(255, 255, 255, 0.6));
-}
-
-.qdrant-settings-value {
-    font-weight: 600;
-    color: var(--SmartThemeAccentColor, #4da3ff);
-    margin-left: 6px;
-}
-
-.qdrant-settings-divider {
-    border: none;
-    border-top: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.3));
-    margin: 18px 0;
-}
-
-.qdrant-settings-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.qdrant-settings-actions .menu_button {
-    flex: 1 1 180px;
-}
-
-.qdrant-button--accent {
-    background: var(--SmartThemeSuccessColor, #28a745);
-    color: #fff;
-}
-
-.qdrant-button--danger {
-    background: var(--SmartThemeErrorColor, #c0392b);
-    color: #fff;
-}
-
-.qdrant-button--accent:hover,
-.qdrant-button--danger:hover {
-    filter: brightness(1.05);
-}
-
-.qdrant-status {
-    margin-top: 10px;
-    padding: 10px;
-    border-radius: var(--SmartThemeBlockRadius, 8px);
-    border: 1px solid transparent;
-    font-size: 0.9em;
-    transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
-}
-
-.qdrant-status:empty {
-    display: none;
-}
-
-.qdrant-status--info {
-    background: var(--SmartThemeInfoTint, rgba(77, 163, 255, 0.1));
-    border-color: var(--SmartThemeInfoColor, #4da3ff);
-    color: var(--SmartThemeInfoColor, #4da3ff);
-}
-
-.qdrant-status--success {
-    background: var(--SmartThemeSuccessTint, rgba(40, 167, 69, 0.12));
-    border-color: var(--SmartThemeSuccessColor, #28a745);
-    color: var(--SmartThemeSuccessColor, #28a745);
-}
-
-.qdrant-status--error {
-    background: var(--SmartThemeErrorTint, rgba(220, 53, 69, 0.12));
-    border-color: var(--SmartThemeErrorColor, #dc3545);
-    color: var(--SmartThemeErrorColor, #dc3545);
-}
-
-.qdrant-modal {
-    position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    z-index: 10000;
-}
-
-.qdrant-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    z-index: 9999;
-}
-
-.qdrant-modal__body {
-    background: var(--SmartThemeBlockColor, #1f1f1f);
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.4));
-    border-radius: var(--SmartThemeBlockRadius, 12px);
-    padding: 24px;
-    max-width: 460px;
-    width: min(460px, 90vw);
-    color: var(--SmartThemeBodyColor, #d7d7d7);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-}
-
-.qdrant-modal__title {
+.qdrant-memory-settings h3 {
     margin-top: 0;
-    margin-bottom: 12px;
+    color: var(--SmartThemeBodyColor, #333);
 }
 
-.qdrant-modal__actions {
-    margin-top: 20px;
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
+.qdrant-memory-settings label {
+    color: var(--SmartThemeBodyColor, #333);
+    font-size: 0.95em;
 }
 
-.qdrant-progress {
-    background: var(--SmartThemeBlockColor, rgba(0, 0, 0, 0.25));
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.4));
-    border-radius: var(--SmartThemeBlockRadius, 8px);
-    height: 20px;
-    overflow: hidden;
-    margin: 16px 0;
+.qdrant-memory-settings small {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.85em;
 }
 
-.qdrant-progress__bar {
-    background: var(--SmartThemeAccentColor, #4da3ff);
-    height: 100%;
-    width: 0%;
-    transition: width 0.3s ease;
+.qdrant-memory-settings input[type="text"],
+.qdrant-memory-settings input[type="password"],
+.qdrant-memory-settings select {
+    font-family: monospace;
 }
 
-.qdrant-progress__details {
+.qdrant-memory-settings input[type="range"] {
+    cursor: pointer;
+}
+
+.qdrant-memory-settings .menu_button {
+    flex: 1;
+}
+
+#qdrant_status {
     font-size: 0.9em;
-    color: var(--SmartThemeHintColor, rgba(255, 255, 255, 0.65));
-    margin: 8px 0 0;
+    transition: all 0.3s ease;
 }
 
-.qdrant-progress__cancel {
-    margin-top: 12px;
+#qdrant_status:empty {
+    display: none;
 }
