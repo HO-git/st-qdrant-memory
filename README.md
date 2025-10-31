@@ -2,6 +2,8 @@
 
 A SillyTavern extension that provides long-term memory capabilities by integrating with Qdrant vector database. The extension automatically saves conversations and retrieves semantically relevant memories during chat generation.
 
+<img width="438" height="873" alt="Screenshot 2025-10-31 at 3 18 19 PM" src="https://github.com/user-attachments/assets/946a7d89-c0ad-41e6-b9ff-35f99b411aa8" />
+
 ## Version 3.0.0 - Major Update
 
 ### New Features
