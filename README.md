@@ -32,7 +32,13 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 
 ## Installation
 
-### Option 1: Install for All Users (Recommended for Development)
+### Option 1: Install via UI 
+
+1. Go to Extensions > Install extension, then paste the following Git URL: https://github.com/HO-git/st-qdrant-memory
+2. Reload SillyTavern
+3. Enable "Qdrant Memory" in the extensions panel
+
+### Option 2: Install for All Users (Recommended for Development)
 
 1. Navigate to your SillyTavern installation directory
 2. Copy the `qdrant-memory` folder to `public/scripts/extensions/third-party/`
@@ -40,7 +46,7 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 4. Go to Extensions > Extension Settings
 5. Enable "Qdrant Memory"
 
-### Option 2: Install for Current User
+### Option 3: Install for Current User
 
 1. In SillyTavern, go to Extensions > Install Extension
 2. Upload or point to the `qdrant-memory` folder
