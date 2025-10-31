@@ -1536,15 +1536,10 @@ function createSettingsUI() {
   const $ = window.$
   $("#extensions_settings2").append(settingsHtml)
 
-    // Initialize the collapsible drawer
-  $("#extensions_settings2 .qdrant-memory-settings .inline-drawer-toggle").on("click", function() {
-    const drawer = $(this).closest(".inline-drawer")
-    const content = drawer.find(".inline-drawer-content")
-    const icon = drawer.find(".inline-drawer-icon")
-    
-    content.slideToggle(200)
-    icon.toggleClass("down up")
-  })
+  // Ensure the inline drawer uses SillyTavern's default behaviour
+  if (typeof window.applyInlineDrawerListeners === "function") {
+    window.applyInlineDrawerListeners()
+  }
 
   // Event handlers
   $("#qdrant_enabled").on("change", function () {
