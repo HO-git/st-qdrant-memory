@@ -1374,17 +1374,22 @@ async function showMemoryViewer() {
 function createSettingsUI() {
   const settingsHtml = `
         <div class="qdrant-memory-settings">
-            <h3>Qdrant Memory Extension v3.1.0</h3>
-            <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
-                Automatic memory creation with temporal context
-            </p>
-            
-            <div style="margin: 15px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? "checked" : ""} />
-                    <strong>Enable Qdrant Memory</strong>
-                </label>
-            </div>
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Qdrant Memory Extension v3.1.0</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
+                        Automatic memory creation with temporal context
+                    </p>
+                    
+                    <div style="margin: 15px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? "checked" : ""} />
+                            <strong>Enable Qdrant Memory</strong>
+                        </label>
+                    </div>
             
             <hr style="margin: 15px 0;" />
             
@@ -1523,11 +1528,23 @@ function createSettingsUI() {
             </div>
             
             <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
+                </div>
+            </div>
         </div>
     `
 
   const $ = window.$
   $("#extensions_settings2").append(settingsHtml)
+
+    // Initialize the collapsible drawer
+  $("#extensions_settings2 .qdrant-memory-settings .inline-drawer-toggle").on("click", function() {
+    const drawer = $(this).closest(".inline-drawer")
+    const content = drawer.find(".inline-drawer-content")
+    const icon = drawer.find(".inline-drawer-icon")
+    
+    content.slideToggle(200)
+    icon.toggleClass("down up")
+  })
 
   // Event handlers
   $("#qdrant_enabled").on("change", function () {
