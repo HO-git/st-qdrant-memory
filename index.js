@@ -3,13 +3,12 @@
 // Version 3.1.0 - Added temporal context with visible dates in memory chunks
 
 const extensionName = "qdrant-memory"
-const QDRANT_MEMORY_FLAG = "__qdrantMemory"
 
 // Default settings
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
-  collectionName: "mem",
+  collectionName: "sillytavern_memories",
   openaiApiKey: "",
   embeddingModel: "text-embedding-3-large",
   memoryLimit: 5,
@@ -21,11 +20,11 @@ const defaultSettings = {
   autoSaveMemories: true,
   saveUserMessages: true,
   saveCharacterMessages: true,
-  minMessageLength: 5,
+  minMessageLength: 10,
   showMemoryNotifications: true,
   retainRecentMessages: 5,
   chunkMinSize: 1200,
-  chunkMaxSize: 1500,
+  chunkMaxSize: 1400,
   chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
 }
 
@@ -36,57 +35,6 @@ let processingSaveQueue = false
 let messageBuffer = []
 let lastMessageTime = 0
 let chunkTimer = null
-
-function isQdrantMemoryMessage(message) {
-  return Boolean(message && message[QDRANT_MEMORY_FLAG])
-}
-
-function normalizeSendDate(sendDate) {
-  if (sendDate instanceof Date) {
-    return sendDate.getTime()
-  }
-
-  if (typeof sendDate === "number") {
-    return sendDate
-  }
-
-  if (typeof sendDate === "string") {
-    const numeric = Number(sendDate)
-    if (!Number.isNaN(numeric)) {
-      return numeric
-    }
-
-    const parsed = Date.parse(sendDate)
-    if (!Number.isNaN(parsed)) {
-      return parsed
-    }
-  }
-
-  return null
-}
-
-function getConversationMessages(chat) {
-  if (!Array.isArray(chat)) {
-    return []
-  }
-
-  return chat.filter((msg) => {
-    if (!msg) return false
-    if (isQdrantMemoryMessage(msg)) return false
-
-    return normalizeSendDate(msg.send_date) !== null
-  })
-}
-
-function removeExistingMemoryEntries(chat) {
-  if (!Array.isArray(chat)) return
-
-  for (let i = chat.length - 1; i >= 0; i--) {
-    if (isQdrantMemoryMessage(chat[i])) {
-      chat.splice(i, 1)
-    }
-  }
-}
 
 // Load settings from localStorage
 function loadSettings() {
@@ -248,21 +196,14 @@ async function searchMemories(query, characterName) {
     // Get the timestamp from N messages ago to exclude recent context
     const context = getContext()
     const chat = context.chat || []
-    removeExistingMemoryEntries(chat)
-    const conversationMessages = getConversationMessages(chat)
     let timestampThreshold = 0
 
-    if (
-      settings.retainRecentMessages > 0 &&
-      conversationMessages.length > settings.retainRecentMessages
-    ) {
+    if (settings.retainRecentMessages > 0 && chat.length > settings.retainRecentMessages) {
       // Get the timestamp of the message at the retain boundary
-      const retainIndex = conversationMessages.length - settings.retainRecentMessages
-      const retainMessage = conversationMessages[retainIndex]
-      const normalizedTimestamp = normalizeSendDate(retainMessage?.send_date)
-
-      if (normalizedTimestamp !== null) {
-        timestampThreshold = normalizedTimestamp
+      const retainIndex = chat.length - settings.retainRecentMessages
+      const retainMessage = chat[retainIndex]
+      if (retainMessage && retainMessage.send_date) {
+        timestampThreshold = retainMessage.send_date
         if (settings.debugMode) {
           console.log(`[Qdrant Memory] Excluding messages newer than timestamp: ${timestampThreshold}`)
         }
@@ -584,7 +525,7 @@ const MAX_MEMORY_LENGTH = 1500 // adjust per your preference
 function formatMemories(memories) {
   if (!memories || memories.length === 0) return ""
 
-  let formatted = "\n[Past chat memories]\n\n"
+  let formatted = "\n[Retrieved from past conversations]\n\n"
 
   memories.forEach((memory) => {
     const payload = memory.payload
@@ -597,6 +538,11 @@ function formatMemories(memories) {
     }
 
     let text = payload.text.replace(/\n/g, " ") // flatten newlines
+
+    // truncate if longer than MAX_MEMORY_LENGTH
+    if (text.length > MAX_MEMORY_LENGTH) {
+      text = text.substring(0, MAX_MEMORY_LENGTH) + "... (truncated)"
+    }
 
     const score = (memory.score * 100).toFixed(0)
 
@@ -1150,9 +1096,6 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
       return
     }
 
-    // Remove previously injected memory messages to prevent duplication
-    removeExistingMemoryEntries(chat)
-
     // Find the last user message to use as the query
     const lastUserMsg = chat
       .slice()
@@ -1192,7 +1135,6 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
         is_system: true,
         mes: memoryText,
         send_date: Date.now(),
-        [QDRANT_MEMORY_FLAG]: true,
       }
 
       // Insert memories at the specified position from the end
@@ -1374,17 +1316,22 @@ async function showMemoryViewer() {
 function createSettingsUI() {
   const settingsHtml = `
         <div class="qdrant-memory-settings">
-            <h3>Qdrant Memory Extension v3.1.0</h3>
-            <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
-                Automatic memory creation with temporal context
-            </p>
-            
-            <div style="margin: 15px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? "checked" : ""} />
-                    <strong>Enable Qdrant Memory</strong>
-                </label>
-            </div>
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Qdrant Memory Extension v3.1.0</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <p style="margin: 10px 0; color: #666; font-size: 0.9em;">
+                        Automatic memory creation with temporal context
+                    </p>
+                    
+                    <div style="margin: 15px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? "checked" : ""} />
+                            <strong>Enable Qdrant Memory</strong>
+                        </label>
+                    </div>
             
             <hr style="margin: 15px 0;" />
             
@@ -1428,7 +1375,7 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
-                <input type="range" id="qdrant_memory_limit" min="1" max="200" value="${settings.memoryLimit}" 
+                <input type="range" id="qdrant_memory_limit" min="1" max="10" value="${settings.memoryLimit}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Maximum memories to retrieve per generation</small>
             </div>
@@ -1442,14 +1389,14 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Memory Position:</strong> <span id="memory_position_display">${settings.memoryPosition}</span></label>
-                <input type="range" id="qdrant_memory_position" min="1" max="30" value="${settings.memoryPosition}" 
+                <input type="range" id="qdrant_memory_position" min="1" max="10" value="${settings.memoryPosition}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">How many messages from the end to insert memories</small>
             </div>
             
             <div style="margin: 10px 0;">
                 <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
-                <input type="range" id="qdrant_retain_recent" min="0" max="50" value="${settings.retainRecentMessages}" 
+                <input type="range" id="qdrant_retain_recent" min="0" max="20" value="${settings.retainRecentMessages}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
             </div>
@@ -1523,11 +1470,23 @@ function createSettingsUI() {
             </div>
             
             <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
+                </div>
+            </div>
         </div>
     `
 
   const $ = window.$
   $("#extensions_settings2").append(settingsHtml)
+
+  // Initialize the collapsible drawer
+  $("#extensions_settings2 .qdrant-memory-settings .inline-drawer-toggle").on("click", function() {
+    const drawer = $(this).closest(".inline-drawer")
+    const content = drawer.find(".inline-drawer-content")
+    const icon = drawer.find(".inline-drawer-icon")
+    
+    content.slideToggle(200)
+    icon.toggleClass("down up")
+  })
 
   // Event handlers
   $("#qdrant_enabled").on("change", function () {
