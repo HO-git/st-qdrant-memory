@@ -993,38 +993,18 @@ async function indexCharacterChats() {
 
   // Create progress modal
   const modalHtml = `
-    <div id="qdrant_index_modal" style="
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-      z-index: 10000;
-      max-width: 500px;
-      width: 90%;
-    ">
-      <div style="color: #333;">
-        <h3 style="margin-top: 0;">Indexing Chats - ${characterName}</h3>
+    <div id="qdrant_index_modal" class="qdrant-modal">
+      <div class="qdrant-modal__body">
+        <h3 class="qdrant-modal__title">Indexing Chats - ${characterName}</h3>
         <p id="qdrant_index_status">Scanning for chat files...</p>
-        <div style="background: #f0f0f0; border-radius: 5px; height: 20px; margin: 15px 0; overflow: hidden;">
-          <div id="qdrant_index_progress" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
+        <div class="qdrant-progress">
+          <div id="qdrant_index_progress" class="qdrant-progress__bar"></div>
         </div>
-        <p id="qdrant_index_details" style="font-size: 0.9em; color: #666;"></p>
-        <button id="qdrant_index_cancel" class="menu_button" style="margin-top: 15px;">Cancel</button>
+        <p id="qdrant_index_details" class="qdrant-progress__details"></p>
+        <button id="qdrant_index_cancel" class="menu_button qdrant-progress__cancel">Cancel</button>
       </div>
     </div>
-    <div id="qdrant_index_overlay" style="
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 9999;
-    "></div>
+    <div id="qdrant_index_overlay" class="qdrant-modal__overlay"></div>
   `
 
   $("body").append(modalHtml)
@@ -1300,26 +1280,14 @@ async function showMemoryViewer() {
 
   // Create a simple modal using jQuery
   const modalHtml = `
-        <div id="qdrant_modal" style="
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            z-index: 10000;
-            max-width: 500px;
-            width: 90%;
-        ">
-            <div style="color: #333;">
-                <h3 style="margin-top: 0;">Memory Viewer - ${characterName}</h3>
+        <div id="qdrant_modal" class="qdrant-modal">
+            <div class="qdrant-modal__body">
+                <h3 class="qdrant-modal__title">Memory Viewer - ${characterName}</h3>
                 <p><strong>Collection:</strong> ${collectionName}</p>
                 <p><strong>Total Memories:</strong> ${count}</p>
                 <p><strong>Total Vectors:</strong> ${vectors}</p>
-                <div style="margin-top: 20px; display: flex; gap: 10px;">
-                    <button id="qdrant_delete_collection_btn" class="menu_button" style="background-color: #dc3545; color: white;">
+                <div class="qdrant-modal__actions">
+                    <button id="qdrant_delete_collection_btn" class="menu_button qdrant-button--danger">
                         Delete All Memories
                     </button>
                     <button id="qdrant_close_modal" class="menu_button">
@@ -1328,15 +1296,7 @@ async function showMemoryViewer() {
                 </div>
             </div>
         </div>
-        <div id="qdrant_overlay" style="
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 9999;
-        "></div>
+        <div id="qdrant_overlay" class="qdrant-modal__overlay"></div>
     `
 
   const $ = window.$
@@ -1373,7 +1333,7 @@ async function showMemoryViewer() {
 // Create settings UI
 function createSettingsUI() {
   const settingsHtml = `
-        <details id="qdrant_memory_settings" class="qdrant-memory-settings" open>
+        <details id="qdrant_memory_settings" class="qdrant-memory-settings">
             <summary class="qdrant-memory-settings__summary">
                 <div class="qdrant-memory-settings__summary-text">
                     <span class="qdrant-memory-settings__title">Qdrant Memory Extension v3.1.0</span>
@@ -1381,150 +1341,140 @@ function createSettingsUI() {
                 </div>
             </summary>
             <div class="qdrant-memory-settings__content">
-                <div style="margin: 15px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-group">
+                    <label class="qdrant-settings-checkbox" for="qdrant_enabled">
                         <input type="checkbox" id="qdrant_enabled" ${settings.enabled ? "checked" : ""} />
-                        <strong>Enable Qdrant Memory</strong>
+                        <span>Enable Qdrant Memory</span>
                     </label>
                 </div>
 
-                <hr style="margin: 15px 0;" />
+                <hr class="qdrant-settings-divider" />
 
-                <h4>Connection Settings</h4>
+                <h4 class="qdrant-settings-heading">Connection Settings</h4>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Qdrant URL:</strong></label>
-                    <input type="text" id="qdrant_url" class="text_pole" value="${settings.qdrantUrl}"
-                           style="width: 100%; margin-top: 5px;"
-                           placeholder="http://localhost:6333" />
-                    <small style="color: #666;">URL of your Qdrant instance</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_url">Qdrant URL</label>
+                    <input type="text" id="qdrant_url" class="text_pole qdrant-settings-input" value="${settings.qdrantUrl}" placeholder="http://localhost:6333" />
+                    <small class="qdrant-settings-hint">URL of your Qdrant instance</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Base Collection Name:</strong></label>
-                    <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}"
-                           style="width: 100%; margin-top: 5px;"
-                           placeholder="sillytavern_memories" />
-                    <small style="color: #666;">Base name for collections (character name will be appended)</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_collection">Base Collection Name</label>
+                    <input type="text" id="qdrant_collection" class="text_pole qdrant-settings-input" value="${settings.collectionName}" placeholder="sillytavern_memories" />
+                    <small class="qdrant-settings-hint">Base name for collections (character name will be appended)</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>OpenAI API Key:</strong></label>
-                    <input type="password" id="qdrant_openai_key" class="text_pole" value="${settings.openaiApiKey}"
-                           placeholder="sk-..." style="width: 100%; margin-top: 5px;" />
-                    <small style="color: #666;">Required for generating embeddings</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_openai_key">OpenAI API Key</label>
+                    <input type="password" id="qdrant_openai_key" class="text_pole qdrant-settings-input" value="${settings.openaiApiKey}" placeholder="sk-..." />
+                    <small class="qdrant-settings-hint">Required for generating embeddings</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Embedding Model:</strong></label>
-                    <select id="qdrant_embedding_model" class="text_pole" style="width: 100%; margin-top: 5px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_embedding_model">Embedding Model</label>
+                    <select id="qdrant_embedding_model" class="text_pole qdrant-settings-input">
                         <option value="text-embedding-3-large" ${settings.embeddingModel === "text-embedding-3-large" ? "selected" : ""}>text-embedding-3-large (best quality)</option>
                         <option value="text-embedding-3-small" ${settings.embeddingModel === "text-embedding-3-small" ? "selected" : ""}>text-embedding-3-small (faster)</option>
                         <option value="text-embedding-ada-002" ${settings.embeddingModel === "text-embedding-ada-002" ? "selected" : ""}>text-embedding-ada-002 (legacy)</option>
                     </select>
                 </div>
 
-                <hr style="margin: 15px 0;" />
+                <hr class="qdrant-settings-divider" />
 
-                <h4>Memory Retrieval Settings</h4>
+                <h4 class="qdrant-settings-heading">Memory Retrieval Settings</h4>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
-                    <input type="range" id="qdrant_memory_limit" min="1" max="30" value="${settings.memoryLimit}"
-                           style="width: 100%; margin-top: 5px;" />
-                    <small style="color: #666;">Maximum memories to retrieve per generation</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_memory_limit">Number of Memories <span class="qdrant-settings-value" id="memory_limit_display">${settings.memoryLimit}</span></label>
+                    <input type="range" id="qdrant_memory_limit" class="qdrant-settings-range" min="1" max="30" value="${settings.memoryLimit}" />
+                    <small class="qdrant-settings-hint">Maximum memories to retrieve per generation</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Relevance Threshold:</strong> <span id="score_threshold_display">${settings.scoreThreshold}</span></label>
-                    <input type="range" id="qdrant_score_threshold" min="0" max="1" step="0.05" value="${settings.scoreThreshold}"
-                           style="width: 100%; margin-top: 5px;" />
-                    <small style="color: #666;">Minimum similarity score (0.0 - 1.0)</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_score_threshold">Relevance Threshold <span class="qdrant-settings-value" id="score_threshold_display">${settings.scoreThreshold}</span></label>
+                    <input type="range" id="qdrant_score_threshold" class="qdrant-settings-range" min="0" max="1" step="0.05" value="${settings.scoreThreshold}" />
+                    <small class="qdrant-settings-hint">Minimum similarity score (0.0 - 1.0)</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Memory Position:</strong> <span id="memory_position_display">${settings.memoryPosition}</span></label>
-                    <input type="range" id="qdrant_memory_position" min="1" max="30" value="${settings.memoryPosition}"
-                           style="width: 100%; margin-top: 5px;" />
-                    <small style="color: #666;">How many messages from the end to insert memories</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_memory_position">Memory Position <span class="qdrant-settings-value" id="memory_position_display">${settings.memoryPosition}</span></label>
+                    <input type="range" id="qdrant_memory_position" class="qdrant-settings-range" min="1" max="30" value="${settings.memoryPosition}" />
+                    <small class="qdrant-settings-hint">How many messages from the end to insert memories</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
-                    <input type="range" id="qdrant_retain_recent" min="0" max="50" value="${settings.retainRecentMessages}"
-                           style="width: 100%; margin-top: 5px;" />
-                    <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_retain_recent">Retain Recent Messages <span class="qdrant-settings-value" id="retain_recent_display">${settings.retainRecentMessages}</span></label>
+                    <input type="range" id="qdrant_retain_recent" class="qdrant-settings-range" min="0" max="50" value="${settings.retainRecentMessages}" />
+                    <small class="qdrant-settings-hint">Exclude the last N messages from retrieval (0 = no exclusion)</small>
                 </div>
 
-                <hr style="margin: 15px 0;" />
+                <hr class="qdrant-settings-divider" />
 
-                <h4>Automatic Memory Creation</h4>
+                <h4 class="qdrant-settings-heading">Automatic Memory Creation</h4>
 
-                <div style="margin: 10px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-checkbox" for="qdrant_per_character">
                         <input type="checkbox" id="qdrant_per_character" ${settings.usePerCharacterCollections ? "checked" : ""} />
-                        <strong>Use Per-Character Collections</strong>
+                        <span>Use Per-Character Collections</span>
                     </label>
-                    <small style="color: #666; display: block; margin-left: 30px;">Each character gets their own dedicated collection (recommended)</small>
+                    <small class="qdrant-settings-hint">Each character gets their own dedicated collection (recommended)</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-checkbox" for="qdrant_auto_save">
                         <input type="checkbox" id="qdrant_auto_save" ${settings.autoSaveMemories ? "checked" : ""} />
-                        <strong>Automatically Save Memories</strong>
+                        <span>Automatically Save Memories</span>
                     </label>
-                    <small style="color: #666; display: block; margin-left: 30px;">Save messages to Qdrant as conversations happen</small>
+                    <small class="qdrant-settings-hint">Save messages to Qdrant as conversations happen</small>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-checkbox" for="qdrant_save_user">
                         <input type="checkbox" id="qdrant_save_user" ${settings.saveUserMessages ? "checked" : ""} />
-                        Save user messages
+                        <span>Save user messages</span>
                     </label>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-checkbox" for="qdrant_save_character">
                         <input type="checkbox" id="qdrant_save_character" ${settings.saveCharacterMessages ? "checked" : ""} />
-                        Save character messages
+                        <span>Save character messages</span>
                     </label>
                 </div>
 
-                <div style="margin: 10px 0;">
-                    <label><strong>Minimum Message Length:</strong> <span id="min_message_length_display">${settings.minMessageLength}</span></label>
-                    <input type="range" id="qdrant_min_length" min="5" max="50" value="${settings.minMessageLength}"
-                           style="width: 100%; margin-top: 5px;" />
-                    <small style="color: #666;">Minimum characters to save a message</small>
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-label" for="qdrant_min_length">Minimum Message Length <span class="qdrant-settings-value" id="min_message_length_display">${settings.minMessageLength}</span></label>
+                    <input type="range" id="qdrant_min_length" class="qdrant-settings-range" min="5" max="50" value="${settings.minMessageLength}" />
+                    <small class="qdrant-settings-hint">Minimum characters to save a message</small>
                 </div>
 
-                <hr style="margin: 15px 0;" />
+                <hr class="qdrant-settings-divider" />
 
-                <h4>Other Settings</h4>
+                <h4 class="qdrant-settings-heading">Other Settings</h4>
 
-                <div style="margin: 15px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-checkbox" for="qdrant_notifications">
                         <input type="checkbox" id="qdrant_notifications" ${settings.showMemoryNotifications ? "checked" : ""} />
-                        Show memory notifications
+                        <span>Show memory notifications</span>
                     </label>
                 </div>
 
-                <div style="margin: 15px 0;">
-                    <label style="display: flex; align-items: center; gap: 10px;">
+                <div class="qdrant-settings-field">
+                    <label class="qdrant-settings-checkbox" for="qdrant_debug">
                         <input type="checkbox" id="qdrant_debug" ${settings.debugMode ? "checked" : ""} />
-                        Debug Mode (check console)
+                        <span>Debug Mode (check console)</span>
                     </label>
                 </div>
 
-                <hr style="margin: 15px 0;" />
+                <hr class="qdrant-settings-divider" />
 
-                <div style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div class="qdrant-settings-actions">
                     <button id="qdrant_test" class="menu_button">Test Connection</button>
                     <button id="qdrant_save" class="menu_button">Save Settings</button>
                     <button id="qdrant_view_memories" class="menu_button">View Memories</button>
-                    <button id="qdrant_index_chats" class="menu_button" style="background-color: #28a745; color: white;">Index Character Chats</button>
+                    <button id="qdrant_index_chats" class="menu_button qdrant-button--accent">Index Character Chats</button>
                 </div>
 
-                <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
+                <div id="qdrant_status" class="qdrant-status" role="status" aria-live="polite"></div>
             </div>
         </details>
     `
@@ -1532,6 +1482,21 @@ function createSettingsUI() {
   const $ = window.$
   $("#qdrant_memory_settings").remove()
   $("#extensions_settings2").append(settingsHtml)
+
+  const setStatus = (variant, message) => {
+    const status = $("#qdrant_status")
+    status
+      .removeClass("qdrant-status--success qdrant-status--error qdrant-status--info")
+      .text(message || "")
+
+    if (!message) {
+      return
+    }
+
+    if (variant) {
+      status.addClass(`qdrant-status--${variant}`)
+    }
+  }
 
   // Event handlers
   $("#qdrant_enabled").on("change", function () {
@@ -1605,16 +1570,12 @@ function createSettingsUI() {
 
   $("#qdrant_save").on("click", () => {
     saveSettings()
-    $("#qdrant_status")
-      .text("✓ Settings saved!")
-      .css({ color: "green", background: "#d4edda", border: "1px solid green" })
-    setTimeout(() => $("#qdrant_status").text("").css({ background: "", border: "" }), 3000)
+    setStatus("success", "✓ Settings saved!")
+    setTimeout(() => setStatus(null, ""), 3000)
   })
 
   $("#qdrant_test").on("click", async () => {
-    $("#qdrant_status")
-      .text("Testing connection...")
-      .css({ color: "#004085", background: "#cce5ff", border: "1px solid #004085" })
+    setStatus("info", "Testing connection...")
 
     try {
       const response = await fetch(`${settings.qdrantUrl}/collections`)
@@ -1622,18 +1583,12 @@ function createSettingsUI() {
       if (response.ok) {
         const data = await response.json()
         const collections = data.result?.collections || []
-        $("#qdrant_status")
-          .text(`✓ Connected! Found ${collections.length} collections.`)
-          .css({ color: "green", background: "#d4edda", border: "1px solid green" })
+        setStatus("success", `✓ Connected! Found ${collections.length} collections.`)
       } else {
-        $("#qdrant_status")
-          .text("✗ Connection failed. Check URL.")
-          .css({ color: "#721c24", background: "#f8d7da", border: "1px solid #721c24" })
+        setStatus("error", "✗ Connection failed. Check URL.")
       }
     } catch (error) {
-      $("#qdrant_status")
-        .text(`✗ Error: ${error.message}`)
-        .css({ color: "#721c24", background: "#f8d7da", border: "1px solid #721c24" })
+      setStatus("error", `✗ Error: ${error.message}`)
     }
   })
 
