@@ -1428,7 +1428,7 @@ function createSettingsUI() {
             
             <div style="margin: 10px 0;">
                 <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
-                <input type="range" id="qdrant_memory_limit" min="1" max="30" value="${settings.memoryLimit}" 
+                <input type="range" id="qdrant_memory_limit" min="1" max="200" value="${settings.memoryLimit}" 
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Maximum memories to retrieve per generation</small>
             </div>
