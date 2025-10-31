@@ -1,10 +1,8 @@
 /* Qdrant Memory Extension Styles */
 
 .qdrant-memory-settings {
-    padding: 15px;
-    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.1));
-    border-radius: 10px;
-    margin: 10px 0;
+    padding: 0;
+    margin: 0 0 10px;
 }
 
 .qdrant-memory-settings h3 {
