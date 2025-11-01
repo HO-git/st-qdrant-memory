@@ -270,7 +270,7 @@ async function searchMemories(query, characterName) {
     }
 
     const searchPayload = {
-      : embedding,
+      vector: embedding,
       limit: settings.memoryLimit,
       score_threshold: settings.scoreThreshold,
       with_payload: true,
@@ -463,7 +463,7 @@ async function saveChunkToQdrant(chunk, participants) {
           points: [
             {
               id: pointId,
-              : embedding,
+              vector: embedding,
               payload: characterPayload,
             },
           ],
