@@ -155,7 +155,7 @@ async function createCollection(collectionName) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        s: {
+        vectors: {
           size: dimensions,
           distance: "Cosine",
         },
@@ -1296,7 +1296,7 @@ async function showMemoryViewer() {
   }
 
   const count = info.points_count || 0
-  const s = info.s_count || 0
+  const vectors = info.vectors_count || 0
 
   // Create a simple modal using jQuery
   const modalHtml = `
