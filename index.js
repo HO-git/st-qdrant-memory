@@ -192,37 +192,81 @@ async function ensureCollection(characterName) {
   return true
 }
 
-// Generate embedding using OpenAI API
+// Universal Embedding Generator (OpenAI / OpenRouter / HuggingFace / Custom)
 async function generateEmbedding(text) {
-  if (!settings.openaiApiKey) {
-    console.error("[Qdrant Memory] OpenAI API key not set")
-    return null
-  }
+  const settings = extension_settings.qdrantMemory || {};
+  const provider = settings.provider || "openai";
+  const apiKey = settings.apiKey || settings.openaiApiKey; // fallback
+  const model = settings.embeddingModel || "text-embedding-3-large";
+  const customUrl = settings.baseUrl || "https://api.openai.com/v1/embeddings";
 
   try {
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: settings.embeddingModel,
-        input: text,
-      }),
-    })
+    let apiUrl = customUrl;
+    let headers = {};
+    let payload = {};
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      console.error("[Qdrant Memory] OpenAI API error:", response.statusText, errorData)
-      return null
+    switch (provider.toLowerCase()) {
+      case "openrouter":
+        apiUrl = "https://openrouter.ai/api/v1/embeddings";
+        headers = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        };
+        payload = { input: text, model };
+        break;
+
+      case "huggingface":
+        apiUrl = `https://api-inference.huggingface.co/pipeline/feature-extraction/${model}`;
+        headers = { "Authorization": `Bearer ${apiKey}` };
+        payload = { inputs: text };
+        break;
+
+      case "custom":
+        apiUrl = customUrl;
+        headers = {
+          "Content-Type": "application/json",
+          ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
+        };
+        payload = { input: text, model };
+        break;
+
+      default: // OpenAI
+        apiUrl = "https://api.openai.com/v1/embeddings";
+        headers = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        };
+        payload = { input: text, model };
     }
 
-    const data = await response.json()
-    return data.data[0].embedding
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[Qdrant Memory] ${provider} API error:`, response.status, err);
+      return null;
+    }
+
+    const json = await response.json();
+    let embedding;
+
+    if (provider === "huggingface") {
+      embedding = Array.isArray(json[0]) ? json[0] : json;
+    } else if (json.data?.[0]?.embedding) {
+      embedding = json.data[0].embedding;
+    } else {
+      console.error("[Qdrant Memory] Unexpected embedding response format:", json);
+      return null;
+    }
+
+    return embedding;
   } catch (error) {
-    console.error("[Qdrant Memory] Error generating embedding:", error)
-    return null
+    console.error(`[Qdrant Memory] Error generating embedding (${provider}):`, error);
+    return null;
   }
 }
 
