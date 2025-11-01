@@ -155,7 +155,7 @@ async function createCollection(collectionName) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        vectors: {
+        s: {
           size: dimensions,
           distance: "Cosine",
         },
@@ -270,7 +270,7 @@ async function searchMemories(query, characterName) {
     }
 
     const searchPayload = {
-      vector: embedding,
+      : embedding,
       limit: settings.memoryLimit,
       score_threshold: settings.scoreThreshold,
       with_payload: true,
@@ -463,7 +463,7 @@ async function saveChunkToQdrant(chunk, participants) {
           points: [
             {
               id: pointId,
-              vector: embedding,
+              : embedding,
               payload: characterPayload,
             },
           ],
@@ -1296,7 +1296,7 @@ async function showMemoryViewer() {
   }
 
   const count = info.points_count || 0
-  const vectors = info.vectors_count || 0
+  const s = info.s_count || 0
 
   // Create a simple modal using jQuery
   const modalHtml = `
@@ -1317,7 +1317,6 @@ async function showMemoryViewer() {
                 <h3 style="margin-top: 0;">Memory Viewer - ${characterName}</h3>
                 <p><strong>Collection:</strong> ${collectionName}</p>
                 <p><strong>Total Memories:</strong> ${count}</p>
-                <p><strong>Total Vectors:</strong> ${vectors}</p>
                 <div style="margin-top: 20px; display: flex; gap: 10px;">
                     <button id="qdrant_delete_collection_btn" class="menu_button" style="background-color: #dc3545; color: white;">
                         Delete All Memories
