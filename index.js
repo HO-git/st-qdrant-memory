@@ -3,7 +3,6 @@
 // Version 3.1.0 - Added temporal context with visible dates in memory chunks
 
 const extensionName = "qdrant-memory"
-const QDRANT_MEMORY_FLAG = "__qdrantMemory"
 
 // Default settings
 const defaultSettings = {
@@ -36,57 +35,6 @@ let processingSaveQueue = false
 let messageBuffer = []
 let lastMessageTime = 0
 let chunkTimer = null
-
-function isQdrantMemoryMessage(message) {
-  return Boolean(message && message[QDRANT_MEMORY_FLAG])
-}
-
-function normalizeSendDate(sendDate) {
-  if (sendDate instanceof Date) {
-    return sendDate.getTime()
-  }
-
-  if (typeof sendDate === "number") {
-    return sendDate
-  }
-
-  if (typeof sendDate === "string") {
-    const numeric = Number(sendDate)
-    if (!Number.isNaN(numeric)) {
-      return numeric
-    }
-
-    const parsed = Date.parse(sendDate)
-    if (!Number.isNaN(parsed)) {
-      return parsed
-    }
-  }
-
-  return null
-}
-
-function getConversationMessages(chat) {
-  if (!Array.isArray(chat)) {
-    return []
-  }
-
-  return chat.filter((msg) => {
-    if (!msg) return false
-    if (isQdrantMemoryMessage(msg)) return false
-
-    return normalizeSendDate(msg.send_date) !== null
-  })
-}
-
-function removeExistingMemoryEntries(chat) {
-  if (!Array.isArray(chat)) return
-
-  for (let i = chat.length - 1; i >= 0; i--) {
-    if (isQdrantMemoryMessage(chat[i])) {
-      chat.splice(i, 1)
-    }
-  }
-}
 
 // Load settings from localStorage
 function loadSettings() {
@@ -133,10 +81,43 @@ function getEmbeddingDimensions() {
   return dimensions[settings.embeddingModel] || 1536
 }
 
+// Get headers for SillyTavern API requests (with CSRF token if available)
+function getSillyTavernHeaders() {
+  const headers = {
+    "Content-Type": "application/json",
+  }
+  
+  // Try to get CSRF token from meta tag or global variable
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content 
+                    || window.token 
+                    || window.csrf_token
+  
+  if (csrfToken) {
+    headers["X-CSRF-Token"] = csrfToken
+  }
+  
+  return headers
+}
+
+// Get headers for Qdrant requests (with optional API key)
+function getQdrantHeaders() {
+  const headers = {
+    "Content-Type": "application/json",
+  }
+  
+  if (settings.qdrantApiKey) {
+    headers["api-key"] = settings.qdrantApiKey
+  }
+  
+  return headers
+}
+
 // Check if collection exists
 async function collectionExists(collectionName) {
   try {
-    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`)
+    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
+      headers: getQdrantHeaders(),
+    })
     return response.ok
   } catch (error) {
     console.error("[Qdrant Memory] Error checking collection:", error)
@@ -151,9 +132,7 @@ async function createCollection(collectionName) {
 
     const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getQdrantHeaders(),
       body: JSON.stringify({
         vectors: {
           size: dimensions,
@@ -248,21 +227,14 @@ async function searchMemories(query, characterName) {
     // Get the timestamp from N messages ago to exclude recent context
     const context = getContext()
     const chat = context.chat || []
-    removeExistingMemoryEntries(chat)
-    const conversationMessages = getConversationMessages(chat)
     let timestampThreshold = 0
 
-    if (
-      settings.retainRecentMessages > 0 &&
-      conversationMessages.length > settings.retainRecentMessages
-    ) {
+    if (settings.retainRecentMessages > 0 && chat.length > settings.retainRecentMessages) {
       // Get the timestamp of the message at the retain boundary
-      const retainIndex = conversationMessages.length - settings.retainRecentMessages
-      const retainMessage = conversationMessages[retainIndex]
-      const normalizedTimestamp = normalizeSendDate(retainMessage?.send_date)
-
-      if (normalizedTimestamp !== null) {
-        timestampThreshold = normalizedTimestamp
+      const retainIndex = chat.length - settings.retainRecentMessages
+      const retainMessage = chat[retainIndex]
+      if (retainMessage && retainMessage.send_date) {
+        timestampThreshold = retainMessage.send_date
         if (settings.debugMode) {
           console.log(`[Qdrant Memory] Excluding messages newer than timestamp: ${timestampThreshold}`)
         }
@@ -305,9 +277,7 @@ async function searchMemories(query, characterName) {
 
     const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points/search`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getQdrantHeaders(),
       body: JSON.stringify(searchPayload),
     })
 
@@ -456,9 +426,7 @@ async function saveChunkToQdrant(chunk, participants) {
       // Save to Qdrant
       const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getQdrantHeaders(),
         body: JSON.stringify({
           points: [
             {
@@ -665,9 +633,7 @@ async function getCharacterChats(characterName) {
     // ✅ FIXED: Use correct SillyTavern endpoint with credentials for authenticated instances
     const response = await fetch("/api/characters/chats", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getSillyTavernHeaders(),
       credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         avatar_url: avatar_url,
@@ -790,9 +756,7 @@ async function loadChatFile(characterName, chatFile) {
     // ✅ FIXED: Use correct SillyTavern endpoint with credentials
     const response = await fetch("/api/chats/get", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getSillyTavernHeaders(),
       credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         ch_name: characterName,
@@ -856,9 +820,7 @@ async function chunkExists(collectionName, messageIds) {
     // Search for any of the message IDs in the chunk
     const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points/scroll`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getQdrantHeaders(),
       body: JSON.stringify({
         filter: {
           should: messageIds.map((id) => ({
@@ -1150,9 +1112,6 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
       return
     }
 
-    // Remove previously injected memory messages to prevent duplication
-    removeExistingMemoryEntries(chat)
-
     // Find the last user message to use as the query
     const lastUserMsg = chat
       .slice()
@@ -1192,7 +1151,6 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
         is_system: true,
         mes: memoryText,
         send_date: Date.now(),
-        [QDRANT_MEMORY_FLAG]: true,
       }
 
       // Insert memories at the specified position from the end
@@ -1252,7 +1210,9 @@ function onMessageSent() {
 
 async function getCollectionInfo(collectionName) {
   try {
-    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`)
+    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
+      headers: getQdrantHeaders(),
+    })
     if (response.ok) {
       const data = await response.json()
       return data.result
@@ -1268,6 +1228,7 @@ async function deleteCollection(collectionName) {
   try {
     const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
       method: "DELETE",
+      headers: getQdrantHeaders(),
     })
     return response.ok
   } catch (error) {
@@ -1624,7 +1585,9 @@ function createSettingsUI() {
       .css({ color: "#004085", background: "#cce5ff", border: "1px solid #004085" })
 
     try {
-      const response = await fetch(`${settings.qdrantUrl}/collections`)
+      const response = await fetch(`${settings.qdrantUrl}/collections`, {
+        headers: getQdrantHeaders(),
+      })
 
       if (response.ok) {
         const data = await response.json()
