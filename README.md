@@ -64,13 +64,12 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 
 You need a running Qdrant instance. Options:
 
-**Local Docker:**
+**VPS/Local Docker:**
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-**Qdrant Cloud:**
-Sign up at [cloud.qdrant.io](https://cloud.qdrant.io)
+Qdrant Cloud not supported at the moment due to CORS block
 
 ### 2. Configure Extension
 
