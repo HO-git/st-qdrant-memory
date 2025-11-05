@@ -9,7 +9,7 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 
 
 
-## Version 3.0.0 - Major Update
+## Version 3.4.0 - Major Update
 
 ### New Features
 
@@ -26,13 +26,13 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 - **Configurable Auto-Save**: Control which messages get saved (user/character, minimum length)
 - **Memory Viewer**: Browse collection stats and delete memories per character
 - **Non-Invasive Retrieval**: Memories inject during generation without modifying chat history
-- **OpenAI Embeddings**: Supports text-embedding-3-large, text-embedding-3-small, and ada-002
+- **OpenAI, OpenRouter and Custom Embeddings**: Supports multiple embedding models
 - **Debug Mode**: Detailed console logging for troubleshooting
 
 ## Requirements
 
 - **SillyTavern** version 1.11.0 or higher
-- **Qdrant** vector database (self-hosted or cloud)
+- **Qdrant** vector database
 - **OpenAI API key** for generating embeddings
 
 ## Installation
@@ -141,8 +141,17 @@ During generation:
 |---------|-------------|---------|
 | **Qdrant URL** | URL of your Qdrant instance | `http://localhost:6333` |
 | **Base Collection Name** | Base name for collections | `sillytavern_memories` |
-| **OpenAI API Key** | Your OpenAI API key | (empty) |
+| **API Key** | Your API key | (empty) |
 | **Embedding Model** | Model for embeddings | `text-embedding-3-large` |
+
+⚠️ Changing Embedding Models
+
+Each embedding model produces vectors with a specific internal format and dimension.
+Qdrant collections are not cross-compatible, once a collection is created using one model (for example, text-embedding-3-small, mistral-embed), it must only store vectors from that same model.
+If you switch to another embedding model:
+- Delete the old collection from Qdrant (or create a new one with a different name).
+- Then re-index your chats using the new model.
+- Otherwise, searches and insertions will fail.
 
 ### Memory Retrieval Settings
 
@@ -242,13 +251,13 @@ v2.0 used a single shared collection with character filtering. v3.0 uses per-cha
 ### API Costs
 
 With auto-save enabled, each message generates:
-- **1 embedding API call** (OpenAI)
+- **1 embedding API call** (OpenAI, OpenRouter, etc)
 - **1 vector insert** (Qdrant)
 - **1 vector search during generation** (Qdrant)
 
-**Typical costs per 1000 messages (text-embedding-3-large):**
+**Typical costs per 1M messages (text-embedding-3-large):**
 - Embedding generation: ~$0.13
-- Qdrant: Free for self-hosted, varies for cloud
+- Qdrant: Free for self-hosted
 
 ### Speed
 
@@ -297,7 +306,7 @@ Character names are sanitized for collection names:
 ### Automatic Collection Creation
 
 Collections are created on-demand with:
-- **Vector size**: Based on embedding model (3072 or 1536 dimensions)
+- **Vector size**: Based on embedding model (e.g. 3072 or 1536 dimensions)
 - **Distance metric**: Cosine similarity
 - **No explicit schema**: Qdrant handles dynamic payloads
 
@@ -309,7 +318,6 @@ Potential improvements:
 - **Memory importance scoring** based on recency
 - **Advanced memory browser** with search and filtering
 - **Batch import/export** tools
-- **Multiple embedding providers** (Cohere, local models)
 - **Memory summarization** for long conversations
 - **Automatic cleanup** of old/irrelevant memories
 
