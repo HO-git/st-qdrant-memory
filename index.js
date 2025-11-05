@@ -15,6 +15,7 @@ const defaultSettings = {
   localEmbeddingUrl: "",
   localEmbeddingApiKey: "",
   embeddingModel: "text-embedding-3-large",
+  customEmbeddingDimensions: null,
   memoryLimit: 5,
   scoreThreshold: 0.3,
   memoryPosition: 2,
@@ -148,7 +149,68 @@ function getEmbeddingDimensions() {
     "mistralai/mistral-embed-2312": 1024,
     "google/gemini-embedding-001": 3072,
   }
-  return dimensions[settings.embeddingModel] || 1536
+
+  const customDimensions = Number.parseInt(settings.customEmbeddingDimensions, 10)
+  const isCustomValid = Number.isFinite(customDimensions) && customDimensions > 0
+
+  if (settings.embeddingProvider === "local") {
+    if (isCustomValid) {
+      return customDimensions
+    }
+    return null
+  }
+
+  if (dimensions[settings.embeddingModel]) {
+    return dimensions[settings.embeddingModel]
+  }
+
+  if (isCustomValid) {
+    return customDimensions
+  }
+
+  return 1536
+}
+
+function updateLocalEmbeddingDimensions(vector) {
+  if (settings.embeddingProvider !== "local") {
+    return
+  }
+
+  if (!Array.isArray(vector)) {
+    return
+  }
+
+  const vectorSize = vector.length
+  if (!Number.isFinite(vectorSize) || vectorSize <= 0) {
+    return
+  }
+
+  const currentDimensions = Number.parseInt(settings.customEmbeddingDimensions, 10)
+  if (Number.isFinite(currentDimensions) && currentDimensions === vectorSize) {
+    return
+  }
+
+  settings.customEmbeddingDimensions = vectorSize
+
+  try {
+    const $ = window.$
+    if ($) {
+      const $input = $("#qdrant_local_dimensions")
+      if ($input && $input.length) {
+        $input.val(vectorSize)
+      }
+    }
+  } catch (error) {
+    if (settings.debugMode) {
+      console.warn("[Qdrant Memory] Unable to update local dimensions input:", error)
+    }
+  }
+
+  saveSettings()
+
+  if (settings.debugMode) {
+    console.log(`[Qdrant Memory] Auto-detected local embedding dimensions: ${vectorSize}`)
+  }
 }
 
 function getEmbeddingProviderError() {
@@ -174,6 +236,13 @@ function getEmbeddingProviderError() {
   if (provider === "local") {
     if (!settings.localEmbeddingUrl || !settings.localEmbeddingUrl.trim()) {
       return "Local embedding URL not set"
+    }
+
+    if (settings.customEmbeddingDimensions != null && settings.customEmbeddingDimensions !== "") {
+      const customDimensions = Number.parseInt(settings.customEmbeddingDimensions, 10)
+      if (!Number.isFinite(customDimensions) || customDimensions <= 0) {
+        return "Embedding dimensions must be a positive number"
+      }
     }
   }
 
@@ -364,17 +433,41 @@ async function collectionExists(collectionName) {
     const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
       headers: getQdrantHeaders(),
     })
-    return response.ok
+
+    if (response.status === 404) {
+      return { exists: false, vectorSize: null }
+    }
+
+    if (!response.ok) {
+      console.error(
+        `[Qdrant Memory] Failed to fetch collection info: ${collectionName} (${response.status} ${response.statusText})`,
+      )
+      return { exists: false, vectorSize: null }
+    }
+
+    const data = await response.json().catch(() => null)
+    const vectorSize =
+      data?.result?.config?.params?.vectors?.size ??
+      data?.result?.config?.params?.vectors?.default?.size ??
+      data?.result?.vectors?.size ??
+      null
+
+    return { exists: true, vectorSize }
   } catch (error) {
     console.error("[Qdrant Memory] Error checking collection:", error)
-    return false
+    return { exists: false, vectorSize: null }
   }
 }
 
 // Create collection for a character
-async function createCollection(collectionName) {
+async function createCollection(collectionName, vectorSize) {
   try {
-    const dimensions = getEmbeddingDimensions()
+    const dimensions = Number.isFinite(vectorSize) && vectorSize > 0 ? vectorSize : getEmbeddingDimensions()
+
+    if (!Number.isFinite(dimensions) || dimensions <= 0) {
+      console.error(`[Qdrant Memory] Cannot create collection ${collectionName} - invalid embedding dimensions`)
+      return false
+    }
 
     const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}`, {
       method: "PUT",
@@ -403,18 +496,32 @@ async function createCollection(collectionName) {
 }
 
 // Ensure collection exists (create if needed)
-async function ensureCollection(characterName) {
+async function ensureCollection(characterName, vectorSize) {
   const collectionName = getCollectionName(characterName)
-  const exists = await collectionExists(collectionName)
+  const { exists, vectorSize: existingSize } = await collectionExists(collectionName)
 
-  if (!exists) {
-    if (settings.debugMode) {
-      console.log(`[Qdrant Memory] Collection doesn't exist, creating: ${collectionName}`)
+  if (exists) {
+    if (
+      Number.isFinite(existingSize) &&
+      Number.isFinite(vectorSize) &&
+      existingSize > 0 &&
+      vectorSize > 0 &&
+      existingSize !== vectorSize
+    ) {
+      console.error(
+        `[Qdrant Memory] Collection ${collectionName} has dimension ${existingSize}, but embedding returned ${vectorSize}. Please recreate the collection to match the model.`,
+      )
+      return false
     }
-    return await createCollection(collectionName)
+
+    return true
   }
 
-  return true
+  if (settings.debugMode) {
+    console.log(`[Qdrant Memory] Collection doesn't exist, creating: ${collectionName}`)
+  }
+
+  return await createCollection(collectionName, vectorSize)
 }
 
 // Generate embedding using the configured provider
@@ -474,24 +581,26 @@ async function generateEmbedding(text) {
     }
 
     const data = await response.json()
-    if (Array.isArray(data?.data) && data.data[0]?.embedding) {
-      return data.data[0].embedding
+    let embeddingVector = null
+
+    if (Array.isArray(data?.data) && Array.isArray(data.data[0]?.embedding)) {
+      embeddingVector = data.data[0].embedding
+    } else if (Array.isArray(data?.data) && Array.isArray(data.data[0]?.vector)) {
+      embeddingVector = data.data[0].vector
+    } else if (Array.isArray(data?.embedding)) {
+      embeddingVector = data.embedding
+    } else if (Array.isArray(data?.embeddings)) {
+      embeddingVector = data.embeddings[0]
     }
 
-    if (Array.isArray(data?.data) && data.data[0]?.vector) {
-      return data.data[0].vector
+    if (!Array.isArray(embeddingVector)) {
+      console.error("[Qdrant Memory] Unable to parse embedding response", data)
+      return null
     }
 
-    if (Array.isArray(data?.embedding)) {
-      return data.embedding
-    }
+    updateLocalEmbeddingDimensions(embeddingVector)
 
-    if (Array.isArray(data?.embeddings)) {
-      return data.embeddings[0]
-    }
-
-    console.error("[Qdrant Memory] Unable to parse embedding response", data)
-    return null
+    return embeddingVector
   } catch (error) {
     console.error("[Qdrant Memory] Error generating embedding:", error)
     return null
@@ -505,17 +614,16 @@ async function searchMemories(query, characterName) {
   try {
     const collectionName = getCollectionName(characterName)
 
-    // Ensure collection exists (create if needed)
-    const collectionReady = await ensureCollection(characterName)
+    const embedding = await generateEmbedding(query)
+    if (!embedding) return []
+
+    const collectionReady = await ensureCollection(characterName, embedding.length)
     if (!collectionReady) {
       if (settings.debugMode) {
         console.log(`[Qdrant Memory] Collection not ready: ${collectionName}`)
       }
       return []
     }
-
-    const embedding = await generateEmbedding(query)
-    if (!embedding) return []
 
     // Get the timestamp from N messages ago to exclude recent context
     const context = getContext()
@@ -704,7 +812,7 @@ async function saveChunkToQdrant(chunk, participants) {
       const collectionName = getCollectionName(characterName)
 
       // Ensure collection exists
-      const collectionReady = await ensureCollection(characterName)
+      const collectionReady = await ensureCollection(characterName, embedding.length)
       if (!collectionReady) {
         console.error(`[Qdrant Memory] Cannot save chunk - collection creation failed for ${characterName}`)
         return false
@@ -1307,7 +1415,6 @@ async function indexCharacterChats() {
     $("#qdrant_index_status").text(`Found ${chatFiles.length} chat files`)
 
     const collectionName = getCollectionName(characterName)
-    await ensureCollection(characterName)
 
     let totalChunks = 0
     let savedChunks = 0
@@ -1705,6 +1812,14 @@ function createSettingsUI() {
                 <small style="color: #666;">Used if your local/custom endpoint requires authentication</small>
             </div>
 
+            <div id="qdrant_local_dimensions_group" style="margin: 10px 0; display: none;">
+                <label><strong>Embedding dimensions:</strong></label>
+                <input type="number" id="qdrant_local_dimensions" class="text_pole"
+                       value="${settings.customEmbeddingDimensions ?? ""}"
+                       min="1" step="1" style="width: 100%; margin-top: 5px;" placeholder="Auto-detect after first call" />
+                <small style="color: #666;">Vector size returned by your custom embedding model (leave blank to auto-detect)</small>
+            </div>
+
             <div id="qdrant_embedding_model_group" style="margin: 10px 0;">
                 <label><strong>Embedding Model:</strong></label>
                 <select id="qdrant_embedding_model" class="text_pole" style="width: 100%; margin-top: 5px;">
@@ -1868,12 +1983,19 @@ function createSettingsUI() {
     const $openRouterGroup = $("#qdrant_openrouter_key_group")
     const $localGroup = $("#qdrant_local_url_group")
     const $localApiKeyGroup = $("#qdrant_local_api_key_group")
+    const $localDimensionsGroup = $("#qdrant_local_dimensions_group")
+    const $localDimensionsInput = $("#qdrant_local_dimensions")
     const $modelGroup = $("#qdrant_embedding_model_group")
 
     $openAIGroup.toggle(provider === "openai")
     $openRouterGroup.toggle(provider === "openrouter")
     $localGroup.toggle(provider === "local")
     $localApiKeyGroup.toggle(provider === "local")
+    $localDimensionsGroup.toggle(provider === "local")
+
+    if (provider === "local") {
+      $localDimensionsInput.val(settings.customEmbeddingDimensions ?? "")
+    }
 
     const showModelSelect = provider !== "local"
     $modelGroup.toggle(showModelSelect)
@@ -1915,6 +2037,11 @@ function createSettingsUI() {
 
   $("#qdrant_local_api_key").on("input", function () {
     settings.localEmbeddingApiKey = $(this).val()
+  })
+
+  $("#qdrant_local_dimensions").on("input", function () {
+    const value = Number.parseInt($(this).val(), 10)
+    settings.customEmbeddingDimensions = Number.isFinite(value) && value > 0 ? value : null
   })
 
   $("#qdrant_embedding_model").on("change", function () {
