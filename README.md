@@ -4,8 +4,9 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 
 >#### Exporting ChatGPT chats to SillyTavern companion guide: https://rentry.org/STGPTimport
 
-<img width="438" height="873" alt="Screenshot 2025-10-31 at 3 18 19 PM" src="https://github.com/user-attachments/assets/946a7d89-c0ad-41e6-b9ff-35f99b411aa8" />
+<img width="360" height="699" alt="Screenshot 2025-10-31 at 3 18 19 PM" src="https://github.com/user-attachments/assets/946a7d89-c0ad-41e6-b9ff-35f99b411aa8" />
 
+<img width="387" height="699" alt="Screenshot 2025-11-05 at 12 04 00 AM" src="https://github.com/user-attachments/assets/6dc4d3b2-d67f-4cfa-848c-4b7a5cb8e805" />
 
 
 
