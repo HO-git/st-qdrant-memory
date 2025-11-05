@@ -187,6 +187,13 @@ Access the memory viewer to see what's stored:
 3. Displays total memory count
 4. Option to **Delete All Memories** for the character
 
+You can also check the memories being sent in the context via prompt itemization.
+
+<img width="100" height="100" alt="Screenshot 2025-11-04 at 11 52 55 PM" src="https://github.com/user-attachments/assets/0098739c-87f3-4de7-84eb-040e37560aa5" />  >>>>  <img width="124" height="84" alt="Screenshot 2025-11-04 at 11 53 23 PM" src="https://github.com/user-attachments/assets/ca05a0f9-e9c1-4fce-a7d1-959306e47ef0" />  >>>>  <img width="109" height="105" alt="Screenshot 2025-11-04 at 11 54 10 PM" src="https://github.com/user-attachments/assets/03e62f67-c5b0-4241-9c4a-ecdebd960a15" />
+
+
+
+
 ## Troubleshooting
 
 ### No memories are being saved
