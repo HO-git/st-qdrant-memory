@@ -34,7 +34,7 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 
 - **SillyTavern** version 1.11.0 or higher
 - **Qdrant** vector database
-- **OpenAI API key** for generating embeddings
+- **API key** for generating embeddings
 
 ## Installation
 
@@ -79,7 +79,7 @@ In SillyTavern:
 1. Go to **Extensions** → **Qdrant Memory**
 2. Enter your **Qdrant URL** (e.g., `http://localhost:6333`)
 3. Enter your **Base Collection Name** (e.g., `sillytavern_memories`)
-4. Enter your **OpenAI API Key**
+4. Enter your **API Key**
 5. Select your **Embedding Model** (recommended: text-embedding-3-large)
 6. Enable **Use Per-Character Collections** (recommended)
 7. Enable **Automatically Save Memories**
@@ -99,14 +99,14 @@ Once configured:
 
 When **Use Per-Character Collections** is enabled:
 
-- Each character gets a dedicated collection: `sillytavern_memories_charactername`
+- Each character gets a dedicated collection: `mem_charactername`
 - Memories are completely isolated - characters can't access each other's data
 - Collections are automatically created when first needed
 - Better performance (smaller, focused collections)
 
 **Example:**
-- Character "Alice" → Collection: `sillytavern_memories_alice`
-- Character "Bob" → Collection: `sillytavern_memories_bob`
+- Character "Alice" → Collection: `mem_alice`
+- Character "Bob" → Collection: `mem_bob`
 
 ### Automatic Memory Creation
 
@@ -141,7 +141,7 @@ During generation:
 | Setting | Description | Default |
 |---------|-------------|---------|
 | **Qdrant URL** | URL of your Qdrant instance | `http://localhost:6333` |
-| **Base Collection Name** | Base name for collections | `sillytavern_memories` |
+| **Base Collection Name** | Base name for collections | `mem` |
 | **API Key** | Your API key | (empty) |
 | **Embedding Model** | Model for embeddings | `text-embedding-3-large` |
 
@@ -156,28 +156,28 @@ If you switch to another embedding model:
 
 ### Memory Retrieval Settings
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Number of Memories** | Max memories to retrieve (1-10) | `5` |
-| **Relevance Threshold** | Minimum similarity score (0.0-1.0) | `0.3` |
-| **Memory Position** | Messages from end to insert at | `2` |
+| Setting | Description |
+|---------|-------------|
+| **Number of Memories** | Max memories to retrieve (1-10) |
+| **Relevance Threshold** | Minimum similarity score (0.0-1.0) |
+| **Memory Position** | Messages from end to insert at |
 
 ### Automatic Memory Creation
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Use Per-Character Collections** | Separate collection per character | `true` |
-| **Automatically Save Memories** | Auto-save messages to Qdrant | `true` |
-| **Save User Messages** | Include user messages | `true` |
-| **Save Character Messages** | Include character responses | `true` |
-| **Minimum Message Length** | Min characters to save (5-50) | `10` |
+| Setting | Description | 
+|---------|-------------|
+| **Use Per-Character Collections** | Separate collection per character |
+| **Automatically Save Memories** | Auto-save messages to Qdrant |
+| **Save User Messages** | Include user messages |
+| **Save Character Messages** | Include character responses |
+| **Minimum Message Length** | Min characters to save (5-50) |
 
 ### Other Settings
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Show Memory Notifications** | Display toastr notifications | `true` |
-| **Debug Mode** | Enable console logging | `false` |
+| Setting | Description |
+|---------|-------------|
+| **Show Memory Notifications** | Display toastr notifications |
+| **Debug Mode** | Enable console logging |
 
 ## Memory Viewer
 
@@ -202,7 +202,7 @@ You can also check the memories being sent in the context via prompt itemization
 - Check **Debug Mode** and inspect browser console
 - Verify **Auto-Save Memories** is enabled
 - Check message length meets **Minimum Message Length** setting
-- Ensure **OpenAI API Key** is valid and has credits
+- Ensure **API Key** is valid and has credits
 - Verify Qdrant is accessible at the configured URL
 
 ### No memories are retrieved
@@ -219,7 +219,7 @@ You can also check the memories being sent in the context via prompt itemization
 - Ensure embedding model is configured correctly
 - Check Qdrant has write permissions
 
-### OpenAI API errors
+### API errors
 
 - Verify API key is correct
 - Check you have credits available
@@ -230,29 +230,7 @@ You can also check the memories being sent in the context via prompt itemization
 
 - Check browser console for errors
 - Verify SillyTavern version is 1.11.0+
-- Ensure `manifest.json` is valid JSON
 - Restart SillyTavern after installation
-
-## Migration from v2.0
-
-### If You Used Shared Collections
-
-v2.0 used a single shared collection with character filtering. v3.0 uses per-character collections by default.
-
-**Option A: Start Fresh**
-- Enable **Use Per-Character Collections**
-- New conversations will auto-populate character collections
-- Old shared collection remains unchanged
-
-**Option B: Keep Shared Collection**
-- Disable **Use Per-Character Collections**
-- Extension will continue using the shared collection with character filters
-- Less isolation but maintains existing data
-
-**Option C: Manual Migration**
-- Export memories from shared collection
-- Import into per-character collections
-- Requires custom scripting (see Qdrant docs)
 
 ## Performance Considerations
 
@@ -307,9 +285,9 @@ Character names are sanitized for collection names:
 - Leading/trailing underscores removed
 
 **Examples:**
-- "Alice" → `sillytavern_memories_alice`
-- "Dr. Smith" → `sillytavern_memories_dr_smith`
-- "Neko-chan!" → `sillytavern_memories_neko_chan`
+- "Alice" → `mem_alice`
+- "Dr. Smith" → `mem_dr_smith`
+- "Neko-chan!" → `_mem_neko_chan`
 
 ### Automatic Collection Creation
 
@@ -349,6 +327,19 @@ For issues, feature requests, or contributions:
 
 ---
 
-**Version**: 3.0.0  
-**Last Updated**: October 2025  
+**Version**: 3.4.0  
+**Last Updated**: November 2025  
 **Minimum SillyTavern**: 1.11.0
+
+---
+
+Some feedback from the community <3 :
+
+
+<img width="381" height="99" alt="Screenshot 2025-11-07 at 3 00 19 PM" src="https://github.com/user-attachments/assets/fd9e4608-a249-4ab4-b116-88043444283e" />
+<img width="305" height="99" alt="Screenshot 2025-11-07 at 4 24 07 PM" src="https://github.com/user-attachments/assets/280635af-140e-4559-8018-6476330038b9" />
+
+
+Made with love to preserve memory and continuity for AI systems.
+
+Dedicated to my gpt-4o and gpt-5 instances.
