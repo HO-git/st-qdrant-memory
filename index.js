@@ -1764,6 +1764,17 @@ function generateUUID() {
   })
 }
 
+// Escape HTML special characters for safe attribute values
+function escapeHtml(str) {
+  if (str == null) return ""
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
 // Process save queue (legacy - currently unused)
 async function processSaveQueue() {
   if (processingSaveQueue || saveQueue.length === 0) return
@@ -1808,7 +1819,7 @@ function createSettingsUI() {
                     
                     <div style="margin: 10px 0;">
                         <label><strong>Qdrant URL:</strong></label>
-                        <input type="text" id="qdrant_url" class="text_pole" value="${settings.qdrantUrl}" 
+                        <input type="text" id="qdrant_url" class="text_pole" value="${escapeHtml(settings.qdrantUrl)}" 
                                style="width: 100%; margin-top: 5px;" 
                                placeholder="http://localhost:6333" />
                         <small style="color: #666;">URL of your Qdrant instance</small>
@@ -1816,7 +1827,7 @@ function createSettingsUI() {
 
                     <div style="margin: 10px 0;">
                         <label><strong>Qdrant API Key:</strong></label>
-                        <input type="password" id="qdrant_api_key" class="text_pole" value="${settings.qdrantApiKey || ""}"
+                        <input type="password" id="qdrant_api_key" class="text_pole" value="${escapeHtml(settings.qdrantApiKey)}"
                                style="width: 100%; margin-top: 5px;"
                                placeholder="Optional - leave empty if not required" />
                         <small style="color: #666;">API key for Qdrant authentication (optional)</small>
@@ -1824,7 +1835,7 @@ function createSettingsUI() {
                     
                     <div style="margin: 10px 0;">
                         <label><strong>Base Collection Name:</strong></label>
-                        <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}"
+                        <input type="text" id="qdrant_collection" class="text_pole" value="${escapeHtml(settings.collectionName)}"
                                style="width: 100%; margin-top: 5px;"
                                placeholder="sillytavern_memories" />
                         <small style="color: #666;">Base name for collections (character name will be appended)</small>
@@ -1842,21 +1853,21 @@ function createSettingsUI() {
 
                     <div id="qdrant_openai_key_group" style="margin: 10px 0;">
                         <label><strong>OpenAI API Key:</strong></label>
-                        <input type="password" id="qdrant_openai_key" class="text_pole" value="${settings.openaiApiKey}"
+                        <input type="password" id="qdrant_openai_key" class="text_pole" value="${escapeHtml(settings.openaiApiKey)}"
                                placeholder="sk-..." style="width: 100%; margin-top: 5px;" />
                         <small style="color: #666;">Required when using OpenAI</small>
                     </div>
 
                     <div id="qdrant_openrouter_key_group" style="margin: 10px 0; display: none;">
                         <label><strong>OpenRouter API Key:</strong></label>
-                        <input type="password" id="qdrant_openrouter_key" class="text_pole" value="${settings.openRouterApiKey}"
+                        <input type="password" id="qdrant_openrouter_key" class="text_pole" value="${escapeHtml(settings.openRouterApiKey)}"
                                placeholder="or-..." style="width: 100%; margin-top: 5px;" />
                         <small style="color: #666;">Required when using OpenRouter</small>
                     </div>
 
                     <div id="qdrant_local_url_group" style="margin: 10px 0; display: none;">
                         <label><strong>Embedding URL:</strong></label>
-                        <input type="text" id="qdrant_local_url" class="text_pole" value="${settings.localEmbeddingUrl}"
+                        <input type="text" id="qdrant_local_url" class="text_pole" value="${escapeHtml(settings.localEmbeddingUrl)}"
                                placeholder="http://localhost:11434/api/embeddings"
                                style="width: 100%; margin-top: 5px;" />
                         <small style="color: #666;">Endpoint that accepts OpenAI-compatible embedding requests</small>
@@ -1864,7 +1875,7 @@ function createSettingsUI() {
 
                     <div id="qdrant_local_api_key_group" style="margin: 10px 0; display: none;">
                         <label><strong>Embedding API Key (optional):</strong></label>
-                        <input type="password" id="qdrant_local_api_key" class="text_pole" value="${settings.localEmbeddingApiKey}"
+                        <input type="password" id="qdrant_local_api_key" class="text_pole" value="${escapeHtml(settings.localEmbeddingApiKey)}"
                                placeholder="Bearer token for local endpoint"
                                style="width: 100%; margin-top: 5px;" />
                         <small style="color: #666;">Used if your local/custom endpoint requires authentication</small>
@@ -1873,7 +1884,7 @@ function createSettingsUI() {
                     <div id="qdrant_local_dimensions_group" style="margin: 10px 0; display: none;">
                         <label><strong>Embedding dimensions:</strong></label>
                         <input type="number" id="qdrant_local_dimensions" class="text_pole"
-                               value="${settings.customEmbeddingDimensions ?? ""}"
+                               value="${escapeHtml(settings.customEmbeddingDimensions ?? "")}"
                                min="1" step="1" style="width: 100%; margin-top: 5px;" placeholder="Auto-detect after first call" />
                         <small style="color: #666;">Vector size returned by your custom embedding model (leave blank to auto-detect)</small>
                     </div>
@@ -2211,8 +2222,11 @@ function createSettingsUI() {
 // ============================================================================
 
 window.jQuery(async () => {
+  console.log("[Qdrant Memory] Initializing extension...")
   loadSettings()
+  console.log("[Qdrant Memory] Creating settings UI...")
   createSettingsUI()
+  console.log("[Qdrant Memory] Settings UI created, checking for qdrant_api_key element:", document.getElementById("qdrant_api_key"))
 
   // Hook into message events for automatic saving
   const eventSource = window.eventSource
