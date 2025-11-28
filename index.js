@@ -1794,6 +1794,8 @@ async function processSaveQueue() {
 // ============================================================================
 
 function createSettingsUI() {
+  console.log("[Qdrant Memory] createSettingsUI() called")
+  try {
   const settingsHtml = `
         <div class="qdrant-memory-settings">
             <div class="inline-drawer">
@@ -2230,6 +2232,11 @@ function createSettingsUI() {
   $("#qdrant_index_chats").on("click", () => {
     indexCharacterChats()
   })
+  
+  console.log("[Qdrant Memory] createSettingsUI() completed successfully")
+  } catch (error) {
+    console.error("[Qdrant Memory] Error in createSettingsUI():", error)
+  }
 }
 
 // ============================================================================
