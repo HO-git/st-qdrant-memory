@@ -1801,193 +1801,193 @@ function createSettingsUI() {
                             <strong>Enable Qdrant Memory</strong>
                         </label>
                     </div>
-            
-            <hr style="margin: 15px 0;" />
-            
-            <h4>Connection Settings</h4>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Qdrant URL:</strong></label>
-                <input type="text" id="qdrant_url" class="text_pole" value="${settings.qdrantUrl}" 
-                       style="width: 100%; margin-top: 5px;" 
-                       placeholder="http://localhost:6333" />
-                <small style="color: #666;">URL of your Qdrant instance</small>
-            </div>
+                    
+                    <hr style="margin: 15px 0;" />
+                    
+                    <h4>Connection Settings</h4>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Qdrant URL:</strong></label>
+                        <input type="text" id="qdrant_url" class="text_pole" value="${settings.qdrantUrl}" 
+                               style="width: 100%; margin-top: 5px;" 
+                               placeholder="http://localhost:6333" />
+                        <small style="color: #666;">URL of your Qdrant instance</small>
+                    </div>
 
-            <div style="margin: 10px 0;">
-                <label><strong>Qdrant API Key:</strong></label>
-                <input type="password" id="qdrant_api_key" class="text_pole" value="${settings.qdrantApiKey || ""}"
-                       style="width: 100%; margin-top: 5px;"
-                       placeholder="Optional - leave empty if not required" />
-                <small style="color: #666;">API key for Qdrant authentication (optional)</small>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Base Collection Name:</strong></label>
-                <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}"
-                       style="width: 100%; margin-top: 5px;"
-                       placeholder="sillytavern_memories" />
-                <small style="color: #666;">Base name for collections (character name will be appended)</small>
-            </div>
+                    <div style="margin: 10px 0;">
+                        <label><strong>Qdrant API Key:</strong></label>
+                        <input type="password" id="qdrant_api_key" class="text_pole" value="${settings.qdrantApiKey || ""}"
+                               style="width: 100%; margin-top: 5px;"
+                               placeholder="Optional - leave empty if not required" />
+                        <small style="color: #666;">API key for Qdrant authentication (optional)</small>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Base Collection Name:</strong></label>
+                        <input type="text" id="qdrant_collection" class="text_pole" value="${settings.collectionName}"
+                               style="width: 100%; margin-top: 5px;"
+                               placeholder="sillytavern_memories" />
+                        <small style="color: #666;">Base name for collections (character name will be appended)</small>
+                    </div>
 
-            <div style="margin: 10px 0;">
-                <label><strong>Embedding Provider:</strong></label>
-                <select id="qdrant_embedding_provider" class="text_pole" style="width: 100%; margin-top: 5px;">
-                    <option value="openai" ${settings.embeddingProvider === "openai" ? "selected" : ""}>OpenAI</option>
-                    <option value="openrouter" ${settings.embeddingProvider === "openrouter" ? "selected" : ""}>OpenRouter</option>
-                    <option value="local" ${settings.embeddingProvider === "local" ? "selected" : ""}>Local/custom endpoint</option>
-                </select>
-                <small style="color: #666;">Choose the API used for generating embeddings</small>
-            </div>
+                    <div style="margin: 10px 0;">
+                        <label><strong>Embedding Provider:</strong></label>
+                        <select id="qdrant_embedding_provider" class="text_pole" style="width: 100%; margin-top: 5px;">
+                            <option value="openai" ${settings.embeddingProvider === "openai" ? "selected" : ""}>OpenAI</option>
+                            <option value="openrouter" ${settings.embeddingProvider === "openrouter" ? "selected" : ""}>OpenRouter</option>
+                            <option value="local" ${settings.embeddingProvider === "local" ? "selected" : ""}>Local/custom endpoint</option>
+                        </select>
+                        <small style="color: #666;">Choose the API used for generating embeddings</small>
+                    </div>
 
-            <div id="qdrant_openai_key_group" style="margin: 10px 0;">
-                <label><strong>OpenAI API Key:</strong></label>
-                <input type="password" id="qdrant_openai_key" class="text_pole" value="${settings.openaiApiKey}"
-                       placeholder="sk-..." style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Required when using OpenAI</small>
-            </div>
+                    <div id="qdrant_openai_key_group" style="margin: 10px 0;">
+                        <label><strong>OpenAI API Key:</strong></label>
+                        <input type="password" id="qdrant_openai_key" class="text_pole" value="${settings.openaiApiKey}"
+                               placeholder="sk-..." style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Required when using OpenAI</small>
+                    </div>
 
-            <div id="qdrant_openrouter_key_group" style="margin: 10px 0; display: none;">
-                <label><strong>OpenRouter API Key:</strong></label>
-                <input type="password" id="qdrant_openrouter_key" class="text_pole" value="${settings.openRouterApiKey}"
-                       placeholder="or-..." style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Required when using OpenRouter</small>
-            </div>
+                    <div id="qdrant_openrouter_key_group" style="margin: 10px 0; display: none;">
+                        <label><strong>OpenRouter API Key:</strong></label>
+                        <input type="password" id="qdrant_openrouter_key" class="text_pole" value="${settings.openRouterApiKey}"
+                               placeholder="or-..." style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Required when using OpenRouter</small>
+                    </div>
 
-            <div id="qdrant_local_url_group" style="margin: 10px 0; display: none;">
-                <label><strong>Embedding URL:</strong></label>
-                <input type="text" id="qdrant_local_url" class="text_pole" value="${settings.localEmbeddingUrl}"
-                       placeholder="http://localhost:11434/api/embeddings"
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Endpoint that accepts OpenAI-compatible embedding requests</small>
-            </div>
+                    <div id="qdrant_local_url_group" style="margin: 10px 0; display: none;">
+                        <label><strong>Embedding URL:</strong></label>
+                        <input type="text" id="qdrant_local_url" class="text_pole" value="${settings.localEmbeddingUrl}"
+                               placeholder="http://localhost:11434/api/embeddings"
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Endpoint that accepts OpenAI-compatible embedding requests</small>
+                    </div>
 
-            <div id="qdrant_local_api_key_group" style="margin: 10px 0; display: none;">
-                <label><strong>Embedding API Key (optional):</strong></label>
-                <input type="password" id="qdrant_local_api_key" class="text_pole" value="${settings.localEmbeddingApiKey}"
-                       placeholder="Bearer token for local endpoint"
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Used if your local/custom endpoint requires authentication</small>
-            </div>
+                    <div id="qdrant_local_api_key_group" style="margin: 10px 0; display: none;">
+                        <label><strong>Embedding API Key (optional):</strong></label>
+                        <input type="password" id="qdrant_local_api_key" class="text_pole" value="${settings.localEmbeddingApiKey}"
+                               placeholder="Bearer token for local endpoint"
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Used if your local/custom endpoint requires authentication</small>
+                    </div>
 
-            <div id="qdrant_local_dimensions_group" style="margin: 10px 0; display: none;">
-                <label><strong>Embedding dimensions:</strong></label>
-                <input type="number" id="qdrant_local_dimensions" class="text_pole"
-                       value="${settings.customEmbeddingDimensions ?? ""}"
-                       min="1" step="1" style="width: 100%; margin-top: 5px;" placeholder="Auto-detect after first call" />
-                <small style="color: #666;">Vector size returned by your custom embedding model (leave blank to auto-detect)</small>
-            </div>
+                    <div id="qdrant_local_dimensions_group" style="margin: 10px 0; display: none;">
+                        <label><strong>Embedding dimensions:</strong></label>
+                        <input type="number" id="qdrant_local_dimensions" class="text_pole"
+                               value="${settings.customEmbeddingDimensions ?? ""}"
+                               min="1" step="1" style="width: 100%; margin-top: 5px;" placeholder="Auto-detect after first call" />
+                        <small style="color: #666;">Vector size returned by your custom embedding model (leave blank to auto-detect)</small>
+                    </div>
 
-            <div id="qdrant_embedding_model_group" style="margin: 10px 0;">
-                <label><strong>Embedding Model:</strong></label>
-                <select id="qdrant_embedding_model" class="text_pole" style="width: 100%; margin-top: 5px;">
-                    <option value="text-embedding-3-large" ${settings.embeddingModel === "text-embedding-3-large" ? "selected" : ""}>text-embedding-3-large (best quality)</option>
-                    <option value="text-embedding-3-small" ${settings.embeddingModel === "text-embedding-3-small" ? "selected" : ""}>text-embedding-3-small (faster)</option>
-                    <option value="text-embedding-ada-002" ${settings.embeddingModel === "text-embedding-ada-002" ? "selected" : ""}>text-embedding-ada-002 (legacy)</option>
-                </select>
-            </div>
-            
-            <hr style="margin: 15px 0;" />
-            
-            <h4>Memory Retrieval Settings</h4>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
-                <input type="range" id="qdrant_memory_limit" min="1" max="50" value="${settings.memoryLimit}" 
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Maximum memories to retrieve per generation</small>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Relevance Threshold:</strong> <span id="score_threshold_display">${settings.scoreThreshold}</span></label>
-                <input type="range" id="qdrant_score_threshold" min="0" max="1" step="0.05" value="${settings.scoreThreshold}" 
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Minimum similarity score (0.0 - 1.0)</small>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Memory Position:</strong> <span id="memory_position_display">${settings.memoryPosition}</span></label>
-                <input type="range" id="qdrant_memory_position" min="1" max="30" value="${settings.memoryPosition}" 
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">How many messages from the end to insert memories</small>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
-                <input type="range" id="qdrant_retain_recent" min="0" max="50" value="${settings.retainRecentMessages}" 
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
-            </div>
-            
-            <hr style="margin: 15px 0;" />
-            
-            <h4>Automatic Memory Creation</h4>
-            
-            <div style="margin: 10px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_per_character" ${settings.usePerCharacterCollections ? "checked" : ""} />
-                    <strong>Use Per-Character Collections</strong>
-                </label>
-                <small style="color: #666; display: block; margin-left: 30px;">Each character gets their own dedicated collection (recommended)</small>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_auto_save" ${settings.autoSaveMemories ? "checked" : ""} />
-                    <strong>Automatically Save Memories</strong>
-                </label>
-                <small style="color: #666; display: block; margin-left: 30px;">Save messages to Qdrant as conversations happen</small>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_save_user" ${settings.saveUserMessages ? "checked" : ""} />
-                    Save user messages
-                </label>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_save_character" ${settings.saveCharacterMessages ? "checked" : ""} />
-                    Save character messages
-                </label>
-            </div>
-            
-            <div style="margin: 10px 0;">
-                <label><strong>Minimum Message Length:</strong> <span id="min_message_length_display">${settings.minMessageLength}</span></label>
-                <input type="range" id="qdrant_min_length" min="5" max="50" value="${settings.minMessageLength}" 
-                       style="width: 100%; margin-top: 5px;" />
-                <small style="color: #666;">Minimum characters to save a message</small>
-            </div>
-            
-            <hr style="margin: 15px 0;" />
-            
-            <h4>Other Settings</h4>
-            
-            <div style="margin: 15px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_notifications" ${settings.showMemoryNotifications ? "checked" : ""} />
-                    Show memory notifications
-                </label>
-            </div>
-            
-            <div style="margin: 15px 0;">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="qdrant_debug" ${settings.debugMode ? "checked" : ""} />
-                    Debug Mode (check console)
-                </label>
-            </div>
-            
-            <hr style="margin: 15px 0;" />
-            
-            <div style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap;">
-                <button id="qdrant_test" class="menu_button">Test Connection</button>
-                <button id="qdrant_save" class="menu_button">Save Settings</button>
-                <button id="qdrant_view_memories" class="menu_button">View Memories</button>
-                <button id="qdrant_index_chats" class="menu_button" style="background-color: #28a745; color: white;">Index Character Chats</button>
-            </div>
-            
-            <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
+                    <div id="qdrant_embedding_model_group" style="margin: 10px 0;">
+                        <label><strong>Embedding Model:</strong></label>
+                        <select id="qdrant_embedding_model" class="text_pole" style="width: 100%; margin-top: 5px;">
+                            <option value="text-embedding-3-large" ${settings.embeddingModel === "text-embedding-3-large" ? "selected" : ""}>text-embedding-3-large (best quality)</option>
+                            <option value="text-embedding-3-small" ${settings.embeddingModel === "text-embedding-3-small" ? "selected" : ""}>text-embedding-3-small (faster)</option>
+                            <option value="text-embedding-ada-002" ${settings.embeddingModel === "text-embedding-ada-002" ? "selected" : ""}>text-embedding-ada-002 (legacy)</option>
+                        </select>
+                    </div>
+                    
+                    <hr style="margin: 15px 0;" />
+                    
+                    <h4>Memory Retrieval Settings</h4>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Number of Memories:</strong> <span id="memory_limit_display">${settings.memoryLimit}</span></label>
+                        <input type="range" id="qdrant_memory_limit" min="1" max="50" value="${settings.memoryLimit}" 
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Maximum memories to retrieve per generation</small>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Relevance Threshold:</strong> <span id="score_threshold_display">${settings.scoreThreshold}</span></label>
+                        <input type="range" id="qdrant_score_threshold" min="0" max="1" step="0.05" value="${settings.scoreThreshold}" 
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Minimum similarity score (0.0 - 1.0)</small>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Memory Position:</strong> <span id="memory_position_display">${settings.memoryPosition}</span></label>
+                        <input type="range" id="qdrant_memory_position" min="1" max="30" value="${settings.memoryPosition}" 
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">How many messages from the end to insert memories</small>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Retain Recent Messages:</strong> <span id="retain_recent_display">${settings.retainRecentMessages}</span></label>
+                        <input type="range" id="qdrant_retain_recent" min="0" max="50" value="${settings.retainRecentMessages}" 
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Exclude the last N messages from retrieval (0 = no exclusion)</small>
+                    </div>
+                    
+                    <hr style="margin: 15px 0;" />
+                    
+                    <h4>Automatic Memory Creation</h4>
+                    
+                    <div style="margin: 10px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_per_character" ${settings.usePerCharacterCollections ? "checked" : ""} />
+                            <strong>Use Per-Character Collections</strong>
+                        </label>
+                        <small style="color: #666; display: block; margin-left: 30px;">Each character gets their own dedicated collection (recommended)</small>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_auto_save" ${settings.autoSaveMemories ? "checked" : ""} />
+                            <strong>Automatically Save Memories</strong>
+                        </label>
+                        <small style="color: #666; display: block; margin-left: 30px;">Save messages to Qdrant as conversations happen</small>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_save_user" ${settings.saveUserMessages ? "checked" : ""} />
+                            Save user messages
+                        </label>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_save_character" ${settings.saveCharacterMessages ? "checked" : ""} />
+                            Save character messages
+                        </label>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <label><strong>Minimum Message Length:</strong> <span id="min_message_length_display">${settings.minMessageLength}</span></label>
+                        <input type="range" id="qdrant_min_length" min="5" max="50" value="${settings.minMessageLength}" 
+                               style="width: 100%; margin-top: 5px;" />
+                        <small style="color: #666;">Minimum characters to save a message</small>
+                    </div>
+                    
+                    <hr style="margin: 15px 0;" />
+                    
+                    <h4>Other Settings</h4>
+                    
+                    <div style="margin: 15px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_notifications" ${settings.showMemoryNotifications ? "checked" : ""} />
+                            Show memory notifications
+                        </label>
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="qdrant_debug" ${settings.debugMode ? "checked" : ""} />
+                            Debug Mode (check console)
+                        </label>
+                    </div>
+                    
+                    <hr style="margin: 15px 0;" />
+                    
+                    <div style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="qdrant_test" class="menu_button">Test Connection</button>
+                        <button id="qdrant_save" class="menu_button">Save Settings</button>
+                        <button id="qdrant_view_memories" class="menu_button">View Memories</button>
+                        <button id="qdrant_index_chats" class="menu_button" style="background-color: #28a745; color: white;">Index Character Chats</button>
+                    </div>
+                    
+                    <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
                 </div>
             </div>
         </div>
