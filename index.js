@@ -8,6 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
+  qdrantApiKey: "",
   collectionName: "mem",
   embeddingProvider: "openai",
   openaiApiKey: "",
@@ -1812,6 +1813,14 @@ function createSettingsUI() {
                        placeholder="http://localhost:6333" />
                 <small style="color: #666;">URL of your Qdrant instance</small>
             </div>
+
+            <div style="margin: 10px 0;">
+                <label><strong>Qdrant API Key:</strong></label>
+                <input type="password" id="qdrant_api_key" class="text_pole" value="${settings.qdrantApiKey}"
+                       style="width: 100%; margin-top: 5px;"
+                       placeholder="Optional - leave empty if not required" />
+                <small style="color: #666;">API key for Qdrant authentication (optional)</small>
+            </div>
             
             <div style="margin: 10px 0;">
                 <label><strong>Base Collection Name:</strong></label>
@@ -2061,6 +2070,10 @@ function createSettingsUI() {
 
   $("#qdrant_url").on("input", function () {
     settings.qdrantUrl = $(this).val()
+  })
+
+  $("#qdrant_api_key").on("input", function () {
+    settings.qdrantApiKey = $(this).val()
   })
 
   $("#qdrant_collection").on("input", function () {
