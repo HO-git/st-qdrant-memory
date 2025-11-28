@@ -2012,6 +2012,21 @@ function createSettingsUI() {
     window.applyInlineDrawerListeners()
   }
 
+  // Fallback: If qdrant_api_key field is missing, inject it after qdrant_url
+  if ($("#qdrant_api_key").length === 0) {
+    console.log("[Qdrant Memory] qdrant_api_key field missing, injecting dynamically...")
+    const apiKeyHtml = `
+      <div style="margin: 10px 0;" id="qdrant_api_key_container">
+        <label><strong>Qdrant API Key:</strong></label>
+        <input type="password" id="qdrant_api_key" class="text_pole" value="${escapeHtml(settings.qdrantApiKey)}"
+               style="width: 100%; margin-top: 5px;"
+               placeholder="Optional - leave empty if not required" />
+        <small style="color: #666;">API key for Qdrant authentication (optional)</small>
+      </div>
+    `
+    $("#qdrant_url").closest("div").after(apiKeyHtml)
+  }
+
   function updateEmbeddingModelOptions(provider) {
     const models = EMBEDDING_MODEL_OPTIONS[provider] || EMBEDDING_MODEL_OPTIONS.openai
     const $modelSelect = $("#qdrant_embedding_model")
