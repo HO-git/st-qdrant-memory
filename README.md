@@ -328,7 +328,7 @@ For issues, feature requests, or contributions:
 ---
 
 **Version**: 3.4.0  
-**Last Updated**: November 2025  
+**Last Updated**: December 2025  
 **Minimum SillyTavern**: 1.11.0
 
 ---
