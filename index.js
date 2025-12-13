@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.1.1 - Fixed date/timestamp handling across all sources
+// Version 3.1.3 - fixed partial memory storage during streaming
 
 const extensionName = "qdrant-memory"
 
@@ -8,6 +8,7 @@ const extensionName = "qdrant-memory"
 const defaultSettings = {
   enabled: true,
   qdrantUrl: "http://localhost:6333",
+  qdrantApiKey: "",
   collectionName: "mem",
   embeddingProvider: "openai",
   openaiApiKey: "",
@@ -31,6 +32,13 @@ const defaultSettings = {
   chunkMinSize: 1200,
   chunkMaxSize: 1500,
   chunkTimeout: 30000, // 30 seconds - save chunk if no new messages
+  // NEW v3.1.2 settings
+  dedupeThreshold: 0.92, // Similarity threshold for chunk deduplication
+  preventDuplicateInjection: true, // Prevent inserting memories multiple times
+  streamFinalizePollMs: 250,
+  streamFinalizeStableMs: 1200,
+  streamFinalizeMaxWaitMs: 300000,
+  flushAfterAssistant: true,
 }
 
 let settings = { ...defaultSettings }
@@ -40,6 +48,20 @@ let processingSaveQueue = false
 let messageBuffer = []
 let lastMessageTime = 0
 let chunkTimer = null
+let pendingAssistantFinalize = null
+
+// NEW: Track which chats have had memories injected to prevent duplicates
+const memoryInjectionTracker = new Set()
+
+// Helper to create a unique hash for a chat state
+function getChatHash(chat) {
+  // Create a hash based on the last few messages to identify unique chat states
+  const lastMessages = chat.slice(-5).map(msg => {
+    return `${msg.is_user ? 'U' : 'A'}_${msg.mes?.substring(0, 50) || ''}_${msg.send_date || ''}`
+  }).join('|')
+  
+  return lastMessages
+}
 
 const EMBEDDING_MODEL_OPTIONS = {
   openai: [
@@ -107,14 +129,6 @@ const OPENAI_MODEL_ALIASES = {
 
 /**
  * Normalizes various date formats to Unix timestamp in milliseconds
- * Handles:
- * - Millisecond timestamps (e.g., 1730000000000)
- * - Second timestamps (e.g., 1730000000)
- * - Date objects
- * - Date strings (e.g., "October 20, 2025 12:16pm")
- * 
- * @param {number|string|Date} date - The date to normalize
- * @returns {number} Unix timestamp in milliseconds
  */
 function normalizeTimestamp(date) {
   // Already a valid millisecond timestamp
@@ -153,8 +167,6 @@ function normalizeTimestamp(date) {
 
 /**
  * Formats a timestamp as YYYY-MM-DD for display in memory chunks
- * @param {number} timestamp - Unix timestamp in milliseconds
- * @returns {string} Formatted date string
  */
 function formatDateForChunk(timestamp) {
   try {
@@ -425,7 +437,6 @@ function getHeadersFromSillyTavernContext() {
 
 // Get headers for SillyTavern API requests (with CSRF token if available)
 function getSillyTavernHeaders() {
-  // Debug: Check what's available
   if (settings.debugMode) {
     console.log("[Qdrant Memory] === Checking available ST methods ===")
     console.log("[Qdrant Memory] window.SillyTavern exists?", typeof SillyTavern !== "undefined")
@@ -696,6 +707,45 @@ async function generateEmbedding(text) {
 // MEMORY SEARCH AND RETRIEVAL
 // ============================================================================
 
+// NEW: Check if chunk already exists (deduplication)
+async function chunkExistsInCollection(collectionName, embedding, text, dedupeThreshold) {
+  try {
+    const searchPayload = {
+      vector: embedding,
+      limit: 1,
+      score_threshold: dedupeThreshold,
+      with_payload: true,
+    }
+
+    const response = await fetch(`${settings.qdrantUrl}/collections/${collectionName}/points/search`, {
+      method: "POST",
+      headers: getQdrantHeaders(),
+      body: JSON.stringify(searchPayload),
+    })
+
+    if (!response.ok) {
+      return false
+    }
+
+    const data = await response.json()
+    const results = data.result || []
+
+    if (results.length > 0) {
+      if (settings.debugMode) {
+        console.log(`[Qdrant Memory] Found similar chunk with score: ${results[0].score.toFixed(4)}`)
+        console.log(`[Qdrant Memory] Existing: "${results[0].payload?.text?.substring(0, 80)}..."`)
+        console.log(`[Qdrant Memory] New: "${text.substring(0, 80)}..."`)
+      }
+      return true
+    }
+
+    return false
+  } catch (error) {
+    console.warn('[Qdrant Memory] Deduplication check failed:', error)
+    return false
+  }
+}
+
 // Search Qdrant for relevant memories
 async function searchMemories(query, characterName) {
   if (!settings.enabled) return []
@@ -714,42 +764,42 @@ async function searchMemories(query, characterName) {
       return []
     }
 
-    // Get the timestamp from N messages ago to exclude recent context
+    // FIXED: Improved retain logic - get ALL message IDs that should be excluded
     const context = getContext()
     const chat = context.chat || []
-    let timestampThreshold = 0
+    const excludedMessageIds = new Set()
 
     if (settings.retainRecentMessages > 0 && chat.length > settings.retainRecentMessages) {
-      // Get the timestamp of the message at the retain boundary
-      const retainIndex = chat.length - settings.retainRecentMessages
-      const retainMessage = chat[retainIndex]
-      if (retainMessage && retainMessage.send_date) {
-        // FIXED: Normalize the timestamp before using it
-        timestampThreshold = normalizeTimestamp(retainMessage.send_date)
-        if (settings.debugMode) {
-          console.log(`[Qdrant Memory] Excluding messages newer than timestamp: ${timestampThreshold} (${formatDateForChunk(timestampThreshold)})`)
+      // Get the last N messages
+      const recentMessages = chat.slice(-settings.retainRecentMessages)
+      
+      recentMessages.forEach(msg => {
+        // Create all possible message ID formats this message might have been saved as
+        const normalizedDate = normalizeTimestamp(msg.send_date || Date.now())
+        const msgIndex = chat.indexOf(msg)
+        
+        // Add multiple ID formats to catch all variations
+        excludedMessageIds.add(`${characterName}_${normalizedDate}_${msgIndex}`)
+        excludedMessageIds.add(`${characterName}_${msg.send_date}_${msgIndex}`)
+        
+        if (settings.debugMode && excludedMessageIds.size <= 5) {
+          console.log(`[Qdrant Memory] Excluding message ID: ${characterName}_${normalizedDate}_${msgIndex}`)
         }
+      })
+
+      if (settings.debugMode) {
+        console.log(`[Qdrant Memory] Excluding ${excludedMessageIds.size} recent message IDs from search`)
       }
     }
 
     const searchPayload = {
       vector: embedding,
-      limit: settings.memoryLimit,
+      limit: settings.memoryLimit * 2, // Get more results for filtering
       score_threshold: settings.scoreThreshold,
       with_payload: true,
     }
 
     const filterConditions = []
-
-    // Add timestamp filter to exclude recent messages
-    if (timestampThreshold > 0) {
-      filterConditions.push({
-        key: "timestamp",
-        range: {
-          lt: timestampThreshold,
-        },
-      })
-    }
 
     // Add character filter if using shared collection
     if (!settings.usePerCharacterCollections) {
@@ -778,12 +828,66 @@ async function searchMemories(query, characterName) {
     }
 
     const data = await response.json()
+    let results = data.result || []
 
-    if (settings.debugMode) {
-      console.log("[Qdrant Memory] Found memories:", data.result)
+    // FIXED: Filter out chunks that contain any excluded message IDs
+    if (excludedMessageIds.size > 0) {
+      const beforeFilterCount = results.length
+      
+      results = results.filter(memory => {
+        const messageIds = memory.payload.messageIds || ""
+        const chunkMessageIds = messageIds.split(",")
+        
+        // Check if any of the chunk's message IDs are in the excluded set
+        const hasExcludedMessage = chunkMessageIds.some(id => excludedMessageIds.has(id.trim()))
+        
+        if (hasExcludedMessage && settings.debugMode) {
+          console.log(`[Qdrant Memory] Filtered out chunk containing recent message: ${messageIds}`)
+        }
+        
+        return !hasExcludedMessage
+      })
+
+      if (settings.debugMode) {
+        console.log(`[Qdrant Memory] Filtered ${beforeFilterCount - results.length} chunks with recent messages`)
+      }
     }
 
-    return data.result || []
+    // Deduplicate results based on text similarity
+const uniqueResults = []
+const seenTexts = new Set()
+
+for (const result of results) {
+  const text = result.payload?.text || ""
+  
+  // Create a normalized version for comparison (remove dates, extra whitespace)
+  const normalizedText = text
+    .replace(/\[[\d-]+\]/g, '') // Remove date markers
+    .replace(/\s+/g, ' ')        // Normalize whitespace
+    .trim()
+    .substring(0, 200)           // Compare first 200 chars
+  
+  // Only add if we haven't seen very similar text
+  if (!seenTexts.has(normalizedText)) {
+    seenTexts.add(normalizedText)
+    uniqueResults.push(result)
+  } else if (settings.debugMode) {
+    console.log(`[Qdrant Memory] Filtered duplicate search result: "${normalizedText.substring(0, 50)}..."`)  // ← FIXED: use () not backticks
+  }
+  
+  // Stop if we have enough unique results
+  if (uniqueResults.length >= settings.memoryLimit) {
+    break
+  }
+}
+
+results = uniqueResults
+
+if (settings.debugMode) {
+  console.log(`[Qdrant Memory] Found ${results.length} unique memories (after deduplication)`)  // ← FIXED: use () not backticks
+}
+
+    return results
   } catch (error) {
     console.error("[Qdrant Memory] Error searching memories:", error)
     return []
@@ -791,21 +895,26 @@ async function searchMemories(query, characterName) {
 }
 
 // Format memories for display
-const MAX_MEMORY_LENGTH = 1500 // adjust per your preference
-
 function formatMemories(memories) {
   if (!memories || memories.length === 0) return ""
 
   let formatted = "\n[Past chat memories]\n\n"
+  
+  // Get persona name for display
+  const personaName = getPersonaName()
 
   memories.forEach((memory) => {
     const payload = memory.payload
 
     let speakerLabel
     if (payload.isChunk) {
+      // For conversation chunks, show all speakers
       speakerLabel = `Conversation (${payload.speakers})`
     } else {
-      speakerLabel = payload.speaker === "user" ? "You said" : "Character said"
+      // For individual messages (legacy format), use persona name
+      speakerLabel = payload.speaker === "user" 
+        ? `${personaName} said`   // ← CHANGED: Use personaName instead of "User"
+        : "Character said"
     }
 
     let text = payload.text.replace(/\n/g, " ") // flatten newlines
@@ -861,10 +970,13 @@ function createChunkFromBuffer() {
   const messageIds = []
   let totalLength = 0
   const currentTimestamp = Date.now()
+  
+  // NEW: Get the persona name once for this chunk
+  const personaName = getPersonaName()
 
   // Build chunk text with speaker labels
   messageBuffer.forEach((msg) => {
-    const speaker = msg.isUser ? "You" : msg.characterName
+    const speaker = msg.isUser ? personaName : msg.characterName  // ← CHANGED: Use personaName
     speakers.add(speaker)
     messageIds.push(msg.messageId)
 
@@ -892,21 +1004,57 @@ async function saveChunkToQdrant(chunk, participants) {
   if (!chunk || !participants || participants.length === 0) return false
 
   try {
-    // Generate embedding for the chunk text (already has date prefix from creation)
+    // Generate embedding for the chunk text
     const embedding = await generateEmbedding(chunk.text)
     if (!embedding) {
       console.error("[Qdrant Memory] Cannot save chunk - embedding generation failed")
       return false
     }
 
+    // NEW: Check for duplicates before saving
+    let alreadyExists = false
+    
+    for (const characterName of participants) {
+      const collectionName = getCollectionName(characterName)
+      const collectionReady = await ensureCollection(characterName, embedding.length)
+      
+      if (!collectionReady) {
+        console.error(`[Qdrant Memory] Cannot check duplicates - collection creation failed for ${characterName}`)
+        continue
+      }
+
+      const exists = await chunkExistsInCollection(
+        collectionName, 
+        embedding, 
+        chunk.text, 
+        settings.dedupeThreshold
+      )
+      
+      if (exists) {
+        alreadyExists = true
+        if (settings.debugMode) {
+          console.log(`[Qdrant Memory] Duplicate chunk detected in ${characterName}'s collection, skipping save`)
+        }
+        break
+      }
+    }
+
+    if (alreadyExists) {
+      if (settings.showMemoryNotifications) {
+        const toastr = window.toastr
+        toastr.info("Similar conversation already saved", "Qdrant Memory", { timeOut: 1500 })
+      }
+      return false
+    }
+
     const pointId = generateUUID()
 
-    // Prepare payload - chunk.text already includes date prefix
+    // Prepare payload
     const payload = {
-      text: chunk.text, // Already has date prefix from createChunkFrom* functions
+      text: chunk.text,
       speakers: chunk.speakers.join(", "),
       messageCount: chunk.messageCount,
-      timestamp: chunk.timestamp, // Keep original timestamp for filtering
+      timestamp: chunk.timestamp,
       messageIds: chunk.messageIds.join(","),
       isChunk: true,
     }
@@ -943,7 +1091,6 @@ async function saveChunkToQdrant(chunk, participants) {
       })
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unable to read error response")
         console.error(
           `[Qdrant Memory] Failed to save chunk to ${characterName}: ${response.status} ${response.statusText}`,
         )
@@ -1155,6 +1302,8 @@ async function loadChatFile(characterName, chatFile) {
 
     const context = getContext()
 
+    
+
     // Try to get the character's avatar URL
     let avatar_url = `${characterName}.png`
     if (context.characters && Array.isArray(context.characters)) {
@@ -1252,7 +1401,7 @@ function createChunksFromChat(messages, characterName) {
     if (isUser && !settings.saveUserMessages) continue
     if (!isUser && !settings.saveCharacterMessages) continue
 
-    // FIXED: Normalize send_date before using it
+    // Normalize send_date before using it
     const normalizedDate = normalizeTimestamp(msg.send_date || Date.now())
     
     if (settings.debugMode) {
@@ -1265,7 +1414,7 @@ function createChunksFromChat(messages, characterName) {
       characterName: characterName,
       isUser: isUser,
       messageId: `${characterName}_${normalizedDate}_${messages.indexOf(msg)}`,
-      timestamp: normalizedDate, // Use normalized timestamp
+      timestamp: normalizedDate,
     }
 
     const messageSize = text.length + characterName.length + 4
@@ -1301,16 +1450,18 @@ function createChunkFromMessages(messages) {
   const speakers = new Set()
   const messageIds = []
   let oldestTimestamp = Number.POSITIVE_INFINITY
+  
+  // NEW: Get the persona name once for all messages
+  const personaName = getPersonaName()
 
   messages.forEach((msg) => {
-    const speaker = msg.isUser ? "You" : msg.characterName
+    const speaker = msg.isUser ? personaName : msg.characterName  // ← CHANGED: Use personaName
     speakers.add(speaker)
     messageIds.push(msg.messageId)
 
     const line = `${speaker}: ${msg.text}\n`
     chunkText += line
 
-    // FIXED: All timestamps are already normalized in createChunksFromChat
     if (msg.timestamp < oldestTimestamp) {
       oldestTimestamp = msg.timestamp
     }
@@ -1458,7 +1609,7 @@ async function indexCharacterChats() {
         }
 
         // Get participants (for group chats)
-        const participants = [characterName] // For now, just save to current character
+        const participants = [characterName]
 
         // Save chunk
         const success = await saveChunkToQdrant(chunk, participants)
@@ -1495,12 +1646,34 @@ async function indexCharacterChats() {
 // GENERATION INTERCEPTOR
 // ============================================================================
 
+// FIXED: Prevent duplicate memory injection
 globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
   if (!settings.enabled) {
     if (settings.debugMode) {
       console.log("[Qdrant Memory] Extension disabled, skipping")
     }
     return
+  }
+
+  // NEW: Use chat hash instead of WeakMap
+  if (settings.preventDuplicateInjection) {
+    const chatHash = getChatHash(chat)
+    
+    if (memoryInjectionTracker.has(chatHash)) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Memories already injected for this chat state, skipping")
+      }
+      return
+    }
+    
+    // Mark this chat state as having memories injected
+    memoryInjectionTracker.add(chatHash)
+    
+    // Clean up old hashes to prevent memory leaks (keep last 50)
+    if (memoryInjectionTracker.size > 50) {
+      const oldestHash = memoryInjectionTracker.values().next().value
+      memoryInjectionTracker.delete(oldestHash)
+    }
   }
 
   try {
@@ -1582,6 +1755,147 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
 // AUTOMATIC MEMORY CREATION
 // ============================================================================
 
+function clearPendingAssistantFinalize() {
+  if (pendingAssistantFinalize?.pollTimerId) {
+    clearInterval(pendingAssistantFinalize.pollTimerId)
+  }
+  pendingAssistantFinalize = null
+}
+
+function scheduleFinalizeLastAssistantMessage(messageId, characterName) {
+  const context = getContext()
+  const chat = context.chat || []
+
+  if (chat.length === 0) {
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] No chat messages to finalize")
+    }
+    return
+  }
+
+  const lastMessage = chat[chat.length - 1]
+  
+  // Safety check: make sure this is actually a character message
+  if (lastMessage.is_user) {
+    if (settings.debugMode) {
+      console.log("[Qdrant Memory] Last message is user message, skipping finalize")
+    }
+    return
+  }
+  
+  const initialText = lastMessage?.mes || ""
+
+  clearPendingAssistantFinalize()
+
+  const pollInterval = settings.streamFinalizePollMs || 250
+  const stableMs = settings.streamFinalizeStableMs || 1200
+  const maxWaitMs = settings.streamFinalizeMaxWaitMs || 300000
+
+  if (settings.debugMode) {
+    console.log("[Qdrant Memory] Starting stream finalize poll for character message")
+    console.log("[Qdrant Memory] Initial text length:", initialText.length)
+  }
+
+  pendingAssistantFinalize = {
+    messageId,
+    characterName,
+    startedAt: Date.now(),
+    lastText: initialText,
+    lastChangeAt: Date.now(),
+    pollTimerId: null,
+  }
+
+  const finalizeAssistant = (text, reason) => {
+    if (!text || text.trim().length === 0) {
+      if (settings.debugMode) {
+        console.warn("[Qdrant Memory] Attempted to finalize empty message, skipping")
+      }
+      clearPendingAssistantFinalize()
+      return
+    }
+
+    if (settings.debugMode) {
+      console.log(`[Qdrant Memory] Finalizing character message (${reason})`)
+      console.log(`[Qdrant Memory] Final text length: ${text.length}`)
+      console.log(`[Qdrant Memory] Text preview: "${text.substring(0, 100)}..."`)
+    }
+
+    // Buffer the complete message
+    bufferMessage(text, characterName, false, messageId)
+
+    // Optionally flush the buffer if we have enough messages
+    if (settings.flushAfterAssistant && messageBuffer.length >= 2) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Flushing buffer after assistant message")
+      }
+      processMessageBuffer()
+    }
+
+    clearPendingAssistantFinalize()
+  }
+
+  let pollCount = 0
+  
+  pendingAssistantFinalize.pollTimerId = setInterval(() => {
+    pollCount++
+    
+    const currentContext = getContext()
+    const currentChat = currentContext.chat || []
+    
+    if (currentChat.length === 0) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Chat is empty, cancelling finalize")
+      }
+      clearPendingAssistantFinalize()
+      return
+    }
+    
+    const currentLastMessage = currentChat[currentChat.length - 1] || {}
+    const currentText = currentLastMessage.mes || ""
+    const now = Date.now()
+
+    // Log every 4 seconds (16 polls at 250ms) in debug mode
+    if (settings.debugMode && pollCount % 16 === 0) {
+      console.log(`[Qdrant Memory] Stream poll check #${pollCount}: length=${currentText.length}`)
+    }
+
+    // Detect if the text has changed
+    if (currentText !== pendingAssistantFinalize.lastText) {
+      if (settings.debugMode && pollCount % 4 === 0) {
+        console.log(`[Qdrant Memory] Text changed: ${pendingAssistantFinalize.lastText.length} → ${currentText.length}`)
+      }
+      pendingAssistantFinalize.lastText = currentText
+      pendingAssistantFinalize.lastChangeAt = now
+    }
+
+    const stableDuration = now - pendingAssistantFinalize.lastChangeAt
+    const totalDuration = now - pendingAssistantFinalize.startedAt
+
+    // Check if message switched to user (conversation continued)
+    if (currentLastMessage.is_user) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Detected new user message, finalizing previous assistant message")
+      }
+      finalizeAssistant(pendingAssistantFinalize.lastText, "new user message detected")
+      return
+    }
+
+    // Check if text has been stable for the required duration
+    if (stableDuration >= stableMs) {
+      finalizeAssistant(pendingAssistantFinalize.lastText, `stable for ${stableDuration}ms`)
+      return
+    }
+
+    // Safety: max wait time exceeded
+    if (totalDuration >= maxWaitMs) {
+      if (settings.debugMode) {
+        console.warn(`[Qdrant Memory] Max wait (${maxWaitMs}ms) reached while finalizing assistant message`)
+      }
+      finalizeAssistant(pendingAssistantFinalize.lastText, "max wait reached")
+    }
+  }, pollInterval)
+}
+
 function onMessageSent() {
   if (!settings.enabled) return
   if (!settings.autoSaveMemories) return
@@ -1591,20 +1905,47 @@ function onMessageSent() {
     const chat = context.chat || []
     const characterName = context.name2
 
-    if (!characterName || chat.length === 0) return
+    if (!characterName || chat.length === 0) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] No character or empty chat, skipping save")
+      }
+      return
+    }
 
     // Get the last message
     const lastMessage = chat[chat.length - 1]
 
-    // FIXED: Normalize send_date for messageId
+    // Normalize send_date for messageId
     const normalizedDate = normalizeTimestamp(lastMessage.send_date || Date.now())
     
     // Create a unique ID for this message
-    const messageId = `${characterName}_${normalizedDate}_${chat.length}`
+    const messageId = `${characterName}_${normalizedDate}_${chat.length - 1}`
 
-    if (lastMessage.mes && lastMessage.mes.trim().length > 0) {
-      const isUser = lastMessage.is_user || false
-      bufferMessage(lastMessage.mes, characterName, isUser, messageId)
+    if (!lastMessage.mes || lastMessage.mes.trim().length === 0) {
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Empty message, skipping")
+      }
+      return
+    }
+
+    const isUser = lastMessage.is_user || false
+    
+    if (settings.debugMode) {
+      console.log(`[Qdrant Memory] onMessageSent - isUser: ${isUser}, length: ${lastMessage.mes.length}`)
+    }
+    
+    if (isUser) {
+      // User messages are saved immediately
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Buffering user message immediately")
+      }
+      bufferMessage(lastMessage.mes, characterName, true, messageId)
+    } else {
+      // Character messages need to wait for streaming to complete
+      if (settings.debugMode) {
+        console.log("[Qdrant Memory] Character message detected, scheduling finalize poll")
+      }
+      scheduleFinalizeLastAssistantMessage(messageId, characterName)
     }
   } catch (error) {
     console.error("[Qdrant Memory] Error in onMessageSent:", error)
@@ -1665,7 +2006,6 @@ async function showMemoryViewer() {
 
   const count = info.points_count || 0
 
-  // Create a simple modal using jQuery
   const modalHtml = `
         <div id="qdrant_modal" style="
             position: fixed;
@@ -1708,13 +2048,11 @@ async function showMemoryViewer() {
   const $ = window.$
   $("body").append(modalHtml)
 
-  // Close modal
   $("#qdrant_close_modal, #qdrant_overlay").on("click", () => {
     $("#qdrant_modal").remove()
     $("#qdrant_overlay").remove()
   })
 
-  // Delete collection
   $("#qdrant_delete_collection_btn").on("click", async function () {
     const confirmed = confirm(
       `Are you sure you want to delete ALL memories for ${characterName}? This cannot be undone!`,
@@ -1740,7 +2078,6 @@ async function showMemoryViewer() {
 // UTILITY FUNCTIONS
 // ============================================================================
 
-// Get current context
 function getContext() {
   const SillyTavern = window.SillyTavern
   
@@ -1754,7 +2091,24 @@ function getContext() {
   }
 }
 
-// Generate a unique UUID
+function getPersonaName() {
+  const context = getContext()
+  
+  // Try multiple possible locations for persona name in order of preference
+  const personaName = 
+    context.name1 ||                              // Standard SillyTavern location
+    context.persona?.name ||                      // Alternative location
+    window.name1 ||                               // Direct window access
+    window.SillyTavern?.getContext?.()?.name1 ||  // Through ST API
+    "User"                                        // Fallback to generic "User"
+  
+  if (settings.debugMode && personaName !== "User") {
+    console.log(`[Qdrant Memory] Using persona name: ${personaName}`)
+  }
+  
+  return personaName
+}
+
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     var r = (Math.random() * 16) | 0,
@@ -1763,17 +2117,12 @@ function generateUUID() {
   })
 }
 
-// Process save queue (legacy - currently unused)
 async function processSaveQueue() {
   if (processingSaveQueue || saveQueue.length === 0) return
-
   processingSaveQueue = true
-
   while (saveQueue.length > 0) {
-    const item = saveQueue.shift()
-    // saveMessageToQdrant function removed - now using chunking system
+    saveQueue.shift()
   }
-
   processingSaveQueue = false
 }
 
@@ -1811,6 +2160,14 @@ function createSettingsUI() {
                        style="width: 100%; margin-top: 5px;" 
                        placeholder="http://localhost:6333" />
                 <small style="color: #666;">URL of your Qdrant instance</small>
+            </div>
+
+             <div style="margin: 10px 0;">
+                <label><strong>Qdrant API Key:</strong></label>
+                <input type="password" id="qdrant_api_key" class="text_pole" value="${settings.qdrantApiKey || ""}"
+                       style="width: 100%; margin-top: 5px;"
+                       placeholder="Optional - leave empty if not required" />
+                <small style="color: #666;">API key for Qdrant authentication (optional)</small>
             </div>
             
             <div style="margin: 10px 0;">
@@ -1950,10 +2307,25 @@ function createSettingsUI() {
                        style="width: 100%; margin-top: 5px;" />
                 <small style="color: #666;">Minimum characters to save a message</small>
             </div>
+
+            <div style="margin: 10px 0;">
+                <label><strong>Deduplication Threshold:</strong> <span id="dedupe_threshold_display">${settings.dedupeThreshold}</span></label>
+                <input type="range" id="qdrant_dedupe_threshold" min="0.80" max="1.00" step="0.01" value="${settings.dedupeThreshold}" 
+                       style="width: 100%; margin-top: 5px;" />
+                <small style="color: #666;">Prevent saving duplicate chunks (higher = stricter)</small>
+            </div>
             
             <hr style="margin: 15px 0;" />
             
             <h4>Other Settings</h4>
+            
+            <div style="margin: 15px 0;">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="qdrant_prevent_duplicate" ${settings.preventDuplicateInjection ? "checked" : ""} />
+                    Prevent duplicate memory injection
+                </label>
+                <small style="color: #666; display: block; margin-left: 30px;">Prevent memories from being added to context multiple times</small>
+            </div>
             
             <div style="margin: 15px 0;">
                 <label style="display: flex; align-items: center; gap: 10px;">
@@ -1987,7 +2359,6 @@ function createSettingsUI() {
   const $ = window.$
   $("#extensions_settings2").append(settingsHtml)
 
-  // Ensure the inline drawer uses SillyTavern's default behaviour
   if (typeof window.applyInlineDrawerListeners === "function") {
     window.applyInlineDrawerListeners()
   }
@@ -2063,6 +2434,10 @@ function createSettingsUI() {
     settings.qdrantUrl = $(this).val()
   })
 
+  $("#qdrant_api_key").on("input", function () {
+    settings.qdrantApiKey = $(this).val()
+  })
+
   $("#qdrant_collection").on("input", function () {
     settings.collectionName = $(this).val()
   })
@@ -2136,6 +2511,15 @@ function createSettingsUI() {
   $("#qdrant_min_length").on("input", function () {
     settings.minMessageLength = Number.parseInt($(this).val())
     $("#min_message_length_display").text(settings.minMessageLength)
+  })
+
+  $("#qdrant_dedupe_threshold").on("input", function () {
+    settings.dedupeThreshold = Number.parseFloat($(this).val())
+    $("#dedupe_threshold_display").text(settings.dedupeThreshold.toFixed(2))
+  })
+
+  $("#qdrant_prevent_duplicate").on("change", function () {
+    settings.preventDuplicateInjection = $(this).is(":checked")
   })
 
   $("#qdrant_notifications").on("change", function () {
@@ -2232,5 +2616,5 @@ window.jQuery(async () => {
     }, 2000)
   }
 
-  console.log("[Qdrant Memory] Extension loaded successfully (v3.1.1 - temporal context with dates)")
+  console.log("[Qdrant Memory] Extension loaded successfully (v3.1.3 - fixed partial memory storage during streaming)")
 })
