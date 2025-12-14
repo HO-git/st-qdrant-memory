@@ -19,6 +19,17 @@ A SillyTavern extension that provides long-term memory capabilities by integrati
 👁️ **Memory Viewer**: View and manage stored memories for each character  
 ⚙️ **Granular Control**: Choose what to save (user messages, character messages, minimum length)
 
+Design Philosophy
+
+This extension exists to create persistent, cross-chat continuity. The goal is to help AI companions/characters/assistants feel like they have ongoing relationships, not isolated episodes.
+
+Design Goals: 
+Global, per-character memory across all chats, Cross-session continuity as the default behavior, reduce fragmentation and enable genuine relationship development over time
+
+Explicit Non-Goals: Per-chat memory silos, timeline hiding / "canon" isolation per chat
+
+If you need per-chat separation: SillyTavern's native Vectors extension and community forks already provide it. This project exists specifically to provide global continuity, and per-chat isolation features will not be merged.
+
 ## Features
 
 - **Per-Character Memory Isolation**: Each character has their own collection - no cross-contamination
