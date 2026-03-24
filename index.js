@@ -769,7 +769,7 @@ async function searchMemories(query, characterName) {
     const chat = context.chat || []
     const excludedMessageIds = new Set()
 
-    if (settings.retainRecentMessages > 0 && chat.length > settings.retainRecentMessages) {
+    if (settings.retainRecentMessages > 0) {
       // Get the last N messages
       const recentMessages = chat.slice(-settings.retainRecentMessages)
       
