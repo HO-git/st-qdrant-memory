@@ -211,13 +211,25 @@ function getCollectionName(characterName) {
   }
 
   // Sanitize character name for collection name (lowercase, replace spaces/special chars)
-  const sanitized = characterName
+  const sanitized = String(characterName || "")
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "")
 
-  return `${settings.collectionName}_${sanitized}`
+  return `${settings.collectionName}_${sanitized || "unknown"}`
+}
+
+function showNotification(level, message, title = "Qdrant Memory", options = {}) {
+  const toastr = window.toastr
+  if (toastr && typeof toastr[level] === "function") {
+    toastr[level](message, title, options)
+    return
+  }
+
+  if (settings.debugMode) {
+    console.log(`[Qdrant Memory] ${level.toUpperCase()}: ${message}`)
+  }
 }
 
 // Get embedding dimensions for the selected model
@@ -1013,6 +1025,7 @@ async function saveChunkToQdrant(chunk, participants) {
 
     // NEW: Check for duplicates before saving
     let alreadyExists = false
+    const readyParticipants = []
     
     for (const characterName of participants) {
       const collectionName = getCollectionName(characterName)
@@ -1022,6 +1035,8 @@ async function saveChunkToQdrant(chunk, participants) {
         console.error(`[Qdrant Memory] Cannot check duplicates - collection creation failed for ${characterName}`)
         continue
       }
+
+      readyParticipants.push(characterName)
 
       const exists = await chunkExistsInCollection(
         collectionName, 
@@ -1041,8 +1056,7 @@ async function saveChunkToQdrant(chunk, participants) {
 
     if (alreadyExists) {
       if (settings.showMemoryNotifications) {
-        const toastr = window.toastr
-        toastr.info("Similar conversation already saved", "Qdrant Memory", { timeOut: 1500 })
+        showNotification("info", "Similar conversation already saved", "Qdrant Memory", { timeOut: 1500 })
       }
       return false
     }
@@ -1060,15 +1074,8 @@ async function saveChunkToQdrant(chunk, participants) {
     }
 
     // Save to all participant collections
-    const savePromises = participants.map(async (characterName) => {
+    const savePromises = readyParticipants.map(async (characterName) => {
       const collectionName = getCollectionName(characterName)
-
-      // Ensure collection exists
-      const collectionReady = await ensureCollection(characterName, embedding.length)
-      if (!collectionReady) {
-        console.error(`[Qdrant Memory] Cannot save chunk - collection creation failed for ${characterName}`)
-        return false
-      }
 
       // Add character name to payload only if using shared collection
       const characterPayload = settings.usePerCharacterCollections 
@@ -1110,7 +1117,7 @@ async function saveChunkToQdrant(chunk, participants) {
     const successCount = results.filter((r) => r).length
 
     if (settings.debugMode) {
-      console.log(`[Qdrant Memory] Chunk saved to ${successCount}/${participants.length} collections`)
+      console.log(`[Qdrant Memory] Chunk saved to ${successCount}/${readyParticipants.length} collections`)
     }
 
     return successCount > 0
@@ -1486,17 +1493,16 @@ function createChunkFromMessages(messages) {
 async function indexCharacterChats() {
   const context = getContext()
   const characterName = context.name2
-  const toastr = window.toastr
   const $ = window.$
 
   if (!characterName) {
-    toastr.warning("No character selected", "Qdrant Memory")
+    showNotification("warning", "No character selected")
     return
   }
 
   const providerError = getEmbeddingProviderError()
   if (providerError) {
-    toastr.error(providerError, "Qdrant Memory")
+    showNotification("error", providerError)
     return
   }
 
@@ -1626,10 +1632,10 @@ async function indexCharacterChats() {
 
     if (cancelled) {
       $("#qdrant_index_status").text("Indexing cancelled")
-      toastr.info(`Indexed ${savedChunks} chunks before cancelling`, "Qdrant Memory")
+      showNotification("info", `Indexed ${savedChunks} chunks before cancelling`)
     } else {
       $("#qdrant_index_status").text("Indexing complete!")
-      toastr.success(`Indexed ${savedChunks} new chunks, skipped ${skippedChunks} existing`, "Qdrant Memory")
+      showNotification("success", `Indexed ${savedChunks} new chunks, skipped ${skippedChunks} existing`)
     }
 
     setCancelButtonToClose()
@@ -1637,7 +1643,7 @@ async function indexCharacterChats() {
     console.error("[Qdrant Memory] Error indexing chats:", error)
     $("#qdrant_index_status").text("Error during indexing")
     $("#qdrant_index_details").text(error.message)
-    toastr.error("Failed to index chats", "Qdrant Memory")
+    showNotification("error", "Failed to index chats")
     setCancelButtonToClose()
   }
 }
@@ -1737,9 +1743,8 @@ globalThis.qdrantMemoryInterceptor = async (chat, contextSize, abort, type) => {
         console.log(`[Qdrant Memory] Injected ${memories.length} memories at position ${insertIndex}`)
       }
 
-      const toastr = window.toastr
       if (settings.showMemoryNotifications) {
-        toastr.info(`Retrieved ${memories.length} relevant memories`, "Qdrant Memory", { timeOut: 2000 })
+        showNotification("info", `Retrieved ${memories.length} relevant memories`, "Qdrant Memory", { timeOut: 2000 })
       }
     } else {
       if (settings.debugMode) {
@@ -1990,8 +1995,7 @@ async function showMemoryViewer() {
   const characterName = context.name2
 
   if (!characterName) {
-    const toastr = window.toastr
-    toastr.warning("No character selected", "Qdrant Memory")
+    showNotification("warning", "No character selected")
     return
   }
 
@@ -1999,8 +2003,7 @@ async function showMemoryViewer() {
   const info = await getCollectionInfo(collectionName)
 
   if (!info) {
-    const toastr = window.toastr
-    toastr.warning(`No memories found for ${characterName}`, "Qdrant Memory")
+    showNotification("warning", `No memories found for ${characterName}`)
     return
   }
 
@@ -2061,13 +2064,11 @@ async function showMemoryViewer() {
       $(this).prop("disabled", true).text("Deleting...")
       const success = await deleteCollection(collectionName)
       if (success) {
-        const toastr = window.toastr
-        toastr.success(`All memories deleted for ${characterName}`, "Qdrant Memory")
+        showNotification("success", `All memories deleted for ${characterName}`)
         $("#qdrant_modal").remove()
         $("#qdrant_overlay").remove()
       } else {
-        const toastr = window.toastr
-        toastr.error("Failed to delete memories", "Qdrant Memory")
+        showNotification("error", "Failed to delete memories")
         $(this).prop("disabled", false).text("Delete All Memories")
       }
     }
