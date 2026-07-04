@@ -1,6 +1,6 @@
 // Qdrant Memory Extension for SillyTavern
 // This extension retrieves relevant memories from Qdrant and injects them into conversations
-// Version 3.1.3 - fixed partial memory storage during streaming
+// Version 3.1.4 - added option to vectorize current chat
 
 const extensionName = "qdrant-memory"
 
@@ -2348,6 +2348,7 @@ function createSettingsUI() {
                 <button id="qdrant_save" class="menu_button">Save Settings</button>
                 <button id="qdrant_view_memories" class="menu_button">View Memories</button>
                 <button id="qdrant_index_chats" class="menu_button" style="background-color: #28a745; color: white;">Index Character Chats</button>
+                <button id="qdrant_index_current_chat" class="menu_button" style="background-color: #17a2b8; color: white;">Vectorize Current Chat</button>
             </div>
             
             <div id="qdrant_status" style="margin-top: 10px; padding: 10px; border-radius: 5px;"></div>
@@ -2575,6 +2576,101 @@ function createSettingsUI() {
   $("#qdrant_index_chats").on("click", () => {
     indexCharacterChats()
   })
+
+  $("#qdrant_index_current_chat").on("click", () => {
+    indexCurrentChat()
+  })
+}
+
+async function indexCurrentChat() {
+  const context = getContext()
+  const characterName = context.name2
+  const toastr = window.toastr
+  const $ = window.$
+
+  if (!characterName) {
+    toastr.warning("No character selected", "Qdrant Memory")
+    return
+  }
+
+  const providerError = getEmbeddingProviderError()
+  if (providerError) {
+    toastr.error(providerError, "Qdrant Memory")
+    return
+  }
+
+  const chat = context.chat || []
+  if (chat.length === 0) {
+    toastr.info("Current chat is empty", "Qdrant Memory")
+    return
+  }
+
+  const modalHtml = `
+    <div id="qdrant_index_current_modal" style="
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: white; padding: 30px; border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; max-width: 500px; width: 90%;
+    ">
+      <div style="color: #333;">
+        <h3 style="margin-top: 0;">Vectorizing Current Chat - ${characterName}</h3>
+        <p id="qdrant_index_current_status">Scanning current chat...</p>
+        <div style="background: #f0f0f0; border-radius: 5px; height: 20px; margin: 15px 0; overflow: hidden;">
+          <div id="qdrant_index_current_progress" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <p id="qdrant_index_current_details" style="font-size: 0.9em; color: #666;"></p>
+        <button id="qdrant_index_current_close" class="menu_button" style="margin-top: 15px;" disabled>Close</button>
+      </div>
+    </div>
+    <div id="qdrant_index_current_overlay" style="
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); z-index: 9999;
+    "></div>
+  `
+  $("body").append(modalHtml)
+
+  const closeModal = () => {
+    $("#qdrant_index_current_modal").remove()
+    $("#qdrant_index_current_overlay").remove()
+  }
+  $("#qdrant_index_current_close").on("click", closeModal)
+
+  try {
+    const collectionName = getCollectionName(characterName)
+
+    // Same chunking logic used by full reindex, just scoped to the live chat array
+    const chunks = createChunksFromChat(chat, characterName)
+
+    let savedChunks = 0
+    let skippedChunks = 0
+
+    $("#qdrant_index_current_status").text(`Found ${chunks.length} chunk(s) in current chat`)
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      const progress = (((i + 1) / chunks.length) * 100).toFixed(0)
+      $("#qdrant_index_current_progress").css("width", `${progress}%`)
+
+      const exists = await chunkExists(collectionName, chunk.messageIds)
+      if (exists) {
+        skippedChunks++
+      } else {
+        const success = await saveChunkToQdrant(chunk, [characterName])
+        if (success) savedChunks++
+      }
+
+      $("#qdrant_index_current_details").text(`Saved: ${savedChunks} | Skipped: ${skippedChunks} | Total: ${chunks.length}`)
+    }
+
+    $("#qdrant_index_current_status").text("Done!")
+    toastr.success(`Vectorized ${savedChunks} new chunk(s), skipped ${skippedChunks} already stored`, "Qdrant Memory")
+    $("#qdrant_index_current_close").prop("disabled", false)
+  } catch (error) {
+    console.error("[Qdrant Memory] Error vectorizing current chat:", error)
+    $("#qdrant_index_current_status").text("Error during vectorization")
+    $("#qdrant_index_current_details").text(error.message)
+    toastr.error("Failed to vectorize current chat", "Qdrant Memory")
+    $("#qdrant_index_current_close").prop("disabled", false)
+  }
 }
 
 // ============================================================================
